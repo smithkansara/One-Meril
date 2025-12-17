@@ -1,0 +1,15 @@
+/* Hide the feather paths */
+.lucide-feather path {
+  display: none;
+}
+
+/* Replace icon with your custom logo */
+.lucide-feather {
+  background-image: url("/assets/logo.svg"); /* your custom logo */
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  width: 24px;   /* adjust size */
+  height: 24px;
+}
+

@@ -1,0 +1,202 @@
+# =============================================================================
+# USER DATA AND RUNTIME DIRECTORIES
+# =============================================================================
+# Exclude user-uploaded templates and generated output files
+custom_templates/
+output/
+config/
+
+# =============================================================================
+# PYTHON CACHE AND BUILD FILES
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# =============================================================================
+# VIRTUAL ENVIRONMENTS
+# =============================================================================
+# Python virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.env
+.env.example
+
+# =============================================================================
+# TESTING AND COVERAGE
+# =============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+.nox/
+.tox/
+htmlcov/
+.nyc_output
+
+# =============================================================================
+# IDE AND EDITOR FILES
+# =============================================================================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-*
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# OPERATING SYSTEM FILES
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# VERSION CONTROL
+# =============================================================================
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+.svn/
+.hg/
+.bzr/
+
+# =============================================================================
+# DOCKER AND CONTAINERIZATION
+# =============================================================================
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# =============================================================================
+# DOCUMENTATION AND NOTES
+# =============================================================================
+*.md
+README*
+CHANGELOG*
+LICENSE*
+CONTRIBUTING*
+CODE_OF_CONDUCT*
+SECURITY*
+instructions_template.md
+
+# =============================================================================
+# LOGS AND TEMPORARY FILES
+# =============================================================================
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+logs/
+log/
+
+# =============================================================================
+# ENVIRONMENT AND CONFIG FILES
+# =============================================================================
+.env*
+!.env.example
+config.ini
+settings.ini
+secrets.ini
+*.secret
+*.key
+
+# =============================================================================
+# JUPYTER NOTEBOOKS
+# =============================================================================
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# =============================================================================
+# MYPY AND TYPE CHECKING
+# =============================================================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# =============================================================================
+# PROFILING
+# =============================================================================
+.prof
+
+src/config.yaml

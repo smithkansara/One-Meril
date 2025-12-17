@@ -1,0 +1,25 @@
+services:
+  mcp-office-docs:
+    image: georgx22/mcp-office-docs:latest
+    container_name: mcp-office-docs
+    restart: always
+    ports:
+      - "8958:8958"
+    # Load configuration from .env (copy .env.example to .env and edit)
+    env_file:
+      - .env
+    volumes:
+      # Local output directory (used by LOCAL strategy)
+      - ./output:/app/output
+      # Custom Office templates (optional): custom_pptx_template_4_3.pptx, custom_pptx_template_16_9.pptx, custom_docx_template.docx, custom_email_template.html
+      - ./custom_templates:/app/custom_templates
+      # Config directory containing:
+      #   - email_templates.yaml (dynamic email tool definitions – Mustache templates)
+      #   - credentials or other configuration files (e.g., GCS service account JSON)
+      - ./config:/app/config
+    # Optional: healthcheck could be added later when MCP protocol ping endpoint is exposed
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8958/mcp"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3

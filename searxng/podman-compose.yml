@@ -1,0 +1,9 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "8084:8080"          # Access SearXNG at http://localhost:8084
+    volumes:
+      - ./config:/etc/searxng  # Persistent configuration

@@ -1,0 +1,7 @@
+.env
+images/*
+logs/*
+mcp/mcp-ms-office-documents/output/*
+ollama/*
+uploads/*
+meili_data_v1.12/*
