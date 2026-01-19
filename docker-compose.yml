@@ -10,7 +10,7 @@ services:
       - mongodb
       - rag_api
       - redis  
-    image: localhost/chatgpt.e-meril.in:v1
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/librechat:v2
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -54,7 +54,7 @@ services:
       - ./assets/apple-touch-icon-180x180.png:/app/client/dist/assets/apple-touch-icon-180x180.png
         #- ./custom/custom.css:/app/client/dist/assets/custom.css
       #- ./custom/index.html:/app/client/dist/index.html 
-    
+      -  ./assets/custom.css:/app/client/dist/assets/custom.css   
 
       # - ./Image/logo.svg:/app/client/public/assets/logo.svg
       # - ./image:/app/client/public/assets
