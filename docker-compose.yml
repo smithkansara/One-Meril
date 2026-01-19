@@ -72,7 +72,7 @@ services:
         #- redisdata:/data
   mongodb:
     container_name: chat-mongodb
-    image: localhost/chatgpt.e-meril.in-mongodb:v1
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mongodb:v1
     restart: always
    
     volumes:
@@ -82,7 +82,7 @@ services:
       - librechat-net  
   meilisearch:
     container_name: chat-meilisearch
-    image: localhost/chatgpt.e-meril.in-meilisearch:v1
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/meilisearch:v1
     restart: always
     user: "${UID}:${GID}"
     environment:
@@ -93,7 +93,7 @@ services:
       - ./meili_data_v1.12:/meili_data
   vectordb:
     container_name: vectordb
-    image: localhost/chatgpt.e-meril.in-vectordb:v1
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/vectordb:v1
     environment:
       POSTGRES_DB: mydatabase
       POSTGRES_USER: myuser
@@ -103,7 +103,7 @@ services:
       - meril_pgvector:/var/lib/postgresql/data
   rag_api:
     container_name: rag_api
-    image: localhost/chatgpt.e-meril.in-rag_api:v1
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/rag_api:v1
     environment:
       - DB_HOST=vectordb
       - RAG_PORT=${RAG_PORT:-8000}
@@ -126,7 +126,7 @@ services:
         # - ./ollama:/root/.ollama  
   mcp-office-docs:
     # image: localhost/custom-mcp:latest
-    image: localhost/final-mcp-office:latest
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mcp-office:v1
     container_name: mcp-office-docs
     restart: always
     ports:
@@ -157,7 +157,7 @@ services:
     #   timeout: 5s
     #   retries: 3
   webserver:
-    image: python:3.10-slim
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/python-webserver:v1
     working_dir: /app
     volumes:
       - ./mcp/mcp-ms-office-documents/output:/app/output
