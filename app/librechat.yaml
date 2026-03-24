@@ -98,6 +98,17 @@ interface:
   fileCitations: true
 
   # modelSpecs:
+  #   list:
+  #     - name: One Meril ChatGPT 5
+  #       label: One Meril ChatGPT 5
+  #       description: Merilians GPT - Empowering Intelligence, Amplifying Possibility.
+  #       default: true
+  #       preset:
+  #         endpoint: agents
+  #         agent_id: agent_4w9F89ffSb8aJCGWvHJgD
+
+
+  # modelSpecs:
   # enforce: false
   # list:
   #   - name: "Agents"
@@ -177,6 +188,11 @@ actions:
     - 'swapi.dev'
     - 'librechat.ai'
     - 'google.com'
+    - 'ai.e-meril.in'
+    - 'host.containers.internal' # For accessing services running on the host machine from within a Docker container
+    - 'host.containers.internal:8958' # For accessing services running on the host machine from within a Docker container
+    - '10.120.130.31' # IP address of the host machine, can be used instead of host.containers.internal
+    - '10.120.130.31:8958' # IP address of the host machine with port, can be used instead of host.containers.internal
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -464,8 +480,15 @@ endpoints:
   # pptx-creator:
     #type: sse
       #    url: http://10.10.3.205:8958/sse
+mcpSettings:
+  allowedDomains:
+    - 'host.containers.internal' # For accessing services running on the host machine from within a Docker container
+    - 'host.containers.internal:8958' # For accessing services running on the host machine from within a Docker container
+
 mcpServers:
   mcp-office:
     type: http
     url: http://host.containers.internal:8958/mcp  # Adjust URL if running on different host
-    enabled: true      
+    enabled: true
+
+  

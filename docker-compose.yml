@@ -9,12 +9,14 @@ services:
     depends_on:
       - mongodb
       - rag_api
-      - redis  
-    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/librechat:v2
+      # - redis  
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/librechat:v3
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
@@ -26,12 +28,19 @@ services:
         #- REDIS_PORT=6379
         #- REDIS_PASSWORD=testingpassword
         #- SESSION_STORE=redis
-    command: npm run backend:dev    
-          
+    # command: npm run backend:dev    
+
     volumes:
       - type: bind
         source: ./.env
         target: /app/.env
+      - type: bind
+        source: ./.env
+        target: /app/api/.env
+      - type: bind
+        source: ./custom/manifest.webmanifest
+        target: /app/client/dist/manifest.webmanifest
+        read_only: true
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
@@ -53,8 +62,10 @@ services:
       - ./assets/apple-touch-icon-180x180.png:/app/client/public/assets/apple-touch-icon-180x180.png
       - ./assets/apple-touch-icon-180x180.png:/app/client/dist/assets/apple-touch-icon-180x180.png
         #- ./custom/custom.css:/app/client/dist/assets/custom.css
-      #- ./custom/index.html:/app/client/dist/index.html 
-      -  ./assets/custom.css:/app/client/dist/assets/custom.css   
+      - ./custom/index.html:/app/client/dist/index.html 
+      - ./assets/custom.css:/app/client/dist/assets/custom.css  
+      - ./assets/maskable-icon.png:/app/client/dist/assets/maskable-icon.png
+
 
       # - ./Image/logo.svg:/app/client/public/assets/logo.svg
       # - ./image:/app/client/public/assets
@@ -70,6 +81,8 @@ services:
         #restart: always
         #volumes:
         #- redisdata:/data
+    networks:
+      - librechat-net
   mongodb:
     container_name: chat-mongodb
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mongodb:v1
@@ -91,6 +104,8 @@ services:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
     volumes:
       - ./meili_data_v1.12:/meili_data
+    networks:
+      - librechat-net
   vectordb:
     container_name: vectordb
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/vectordb:v1
@@ -101,6 +116,8 @@ services:
     restart: always
     volumes:
       - meril_pgvector:/var/lib/postgresql/data
+    networks:
+      - librechat-net
   rag_api:
     container_name: rag_api
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/rag_api:v1
@@ -124,6 +141,8 @@ services:
         # - "11434:11434"
         #volumes:
         # - ./ollama:/root/.ollama  
+    networks:
+      - librechat-net
   mcp-office-docs:
     # image: localhost/custom-mcp:latest
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mcp-office:v1
@@ -156,6 +175,8 @@ services:
     #   interval: 30s
     #   timeout: 5s
     #   retries: 3
+    networks:
+      - librechat-net
   webserver:
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/python-webserver:v1
     working_dir: /app
@@ -164,7 +185,9 @@ services:
       - ./webserver.py:/app/webserver.py
     command: ["python", "webserver.py"]
     ports:
-      - "8000:8000"          
+      - "8000:8000" 
+    networks:
+      - librechat-net         
 
 volumes:
    meril_mongo:

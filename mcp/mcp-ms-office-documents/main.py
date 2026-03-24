@@ -126,6 +126,41 @@ async def create_powerpoint_presentation(
         return f"Error creating PowerPoint presentation: {str(e)}"
 
 @mcp.tool(
+    name="create_pdf_from_markdown",
+    description="Converts markdown content to PDF format. Supports headers, tables, lists, formatting, hyperlinks, and block quotes. Use this for final, non-editable documents that need to be shared or printed.",
+    tags={"pdf", "document", "text", "final", "print"},
+    annotations={"title": "Markdown to PDF Converter"}
+)
+async def create_pdf_document(
+    markdown_content: Annotated[str, Field(description="Markdown content. For LEGAL CONTRACTS use numbered lists (1., 2., 3.) for sections and nested lists for provisions - DO NOT use headers (except for contract title). For other documents use headers (# ## ###).")],
+    page_size: Annotated[Literal["letter", "A4"], Field(
+        default="letter",
+        description="Page size: 'letter' for US Letter (8.5x11 inches) or 'A4' for international A4 size"
+    )] = "letter"
+) -> str:
+    """
+    Converts markdown to professionally formatted PDF document.
+    PDF documents are final/non-editable format, ideal for distribution.
+    """
+
+    logger.info(f"Converting markdown to PDF document with {page_size} page size")
+
+    try:
+        result = markdown_to_pdf(markdown_content, page_size)
+        logger.info("PDF document uploaded successfully")
+        return result
+    except Exception as e:
+        logger.error(f"Error creating PDF document: {e}")
+        return f"Error creating PDF document: {str(e)}"
+
+@mcp.tool(
+    name="create_powerpoint_presentation",
+    description="Creates PowerPoint presentations with professional templates using structured slide models.",
+    tags={"powerpoint", "presentation", "slides"},
+    annotations={"title": "PowerPoint Presentation Creator"}
+)
+
+@mcp.tool(
     name="create_email_draft",
     description="Creates an email draft in EML format with HTML content using preset professional styling.",
     tags={"email", "eml", "communication"},
