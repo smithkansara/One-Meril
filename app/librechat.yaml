@@ -88,7 +88,12 @@ interface:
   prompts: true
   bookmarks: true
   multiConvo: true
-  agents: true
+  # agents: true
+  agents:
+    use: true
+    create: true
+    share: true
+    public: false
   peoplePicker:
     users: true
     groups: true
@@ -96,6 +101,9 @@ interface:
   marketplace:
       use: false
   fileCitations: true
+  remoteAgents:
+    use: true
+    create: true
 
   # modelSpecs:
   #   list:

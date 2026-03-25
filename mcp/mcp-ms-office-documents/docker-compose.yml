@@ -17,6 +17,8 @@ services:
       #   - email_templates.yaml (dynamic email tool definitions – Mustache templates)
       #   - credentials or other configuration files (e.g., GCS service account JSON)
       - ./config:/app/config
+      # Mount local code for development
+      - .:/app
     # Optional: healthcheck could be added later when MCP protocol ping endpoint is exposed
     # healthcheck:
     #   test: ["CMD", "curl", "-f", "http://localhost:8958/mcp"]

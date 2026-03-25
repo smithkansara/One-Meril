@@ -104,17 +104,21 @@ def parse_inline_formatting_pdf(text):
     text = handle_escapes(text)
     
     # Convert markdown formatting to ReportLab XML tags
+    # Simple approach: process in specific order to avoid overlapping tag issues
+    
     # Bold: **text** -> <b>text</b>
-    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'\*\*([^\*]*)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'__([^_]*)__', r'<b>\1</b>', text)
     
-    # Italic: *text* -> <i>text</i>
-    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+    # Italic: *text* -> <i>text</i> (only match when not surrounded by *)
+    text = re.sub(r'(?<!\*)\*([^\*]+)\*(?!\*)', r'<i>\1</i>', text)
+    text = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'<i>\1</i>', text)
     
-    # Inline code: `code` -> <font name="Courier">code</font>
-    text = re.sub(r'`(.*?)`', r'<font name="Courier">\1</font>', text)
+    # Inline code: `code` -> <font name=\"Courier\">code</font>
+    text = re.sub(r'`([^`]+)`', r'<font name="Courier">\1</font>', text)
     
-    # Links: [text](url) -> <link href="url">text</link>
-    text = re.sub(r'\[(.*?)]\((.*?)\)', r'<link href="\2" color="blue">\1</link>', text)
+    # Links: [text](url) -> <link href=\"url\">text</link>
+    text = re.sub(r'\[([^\]]+)]\(([^\)]+)\)', r'<link href="\2">\1</link>', text)
     
     return text
 
@@ -268,8 +272,13 @@ def process_list_items(lines, start_idx, doc, is_ordered=False, level=0):
     return i
 
 
-def process_list_items_pdf(lines, start_idx, is_ordered=False, level=0):
+def process_list_items_pdf(lines, start_idx, is_ordered=False, level=0, max_depth=10):
     """Process markdown list items for PDF - returns list of (text, level) tuples."""
+    # Prevent infinite recursion with max depth check
+    if level > max_depth:
+        logger.warning(f"Max list nesting depth ({max_depth}) reached at line {start_idx}")
+        return [], start_idx
+    
     items = []
     i = start_idx
 
@@ -298,8 +307,8 @@ def process_list_items_pdf(lines, start_idx, is_ordered=False, level=0):
         items.append((item_text, level))
         i += 1
 
-        # Look ahead for nested items
-        while i < len(lines):
+        # Look ahead for nested items only
+        while i < len(lines) and items:  # Only look ahead if we have items
             if i >= len(lines):
                 break
 
@@ -314,10 +323,12 @@ def process_list_items_pdf(lines, start_idx, is_ordered=False, level=0):
 
             if next_level > level:
                 # Process nested items
-                nested_items, i = process_list_items_pdf(lines, i, is_ordered, next_level)
+                nested_items, i = process_list_items_pdf(lines, i, is_ordered, next_level, max_depth)
                 items.extend(nested_items)
+                # Continue looking for more items at this level
+                continue
             elif next_level == level:
-                # Same level - continue
+                # Same level - found another list item, break inner loop to process it in outer loop
                 break
             else:
                 # Lower level - return to parent

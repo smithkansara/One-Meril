@@ -145,7 +145,7 @@ services:
       - librechat-net
   mcp-office-docs:
     # image: localhost/custom-mcp:latest
-    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mcp-office:v1
+    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mcp-office:v2
     container_name: mcp-office-docs
     restart: always
     ports:
@@ -165,6 +165,7 @@ services:
       #   - email_templates.yaml (dynamic email tool definitions – Mustache templates)
       #   - credentials or other configuration files (e.g., GCS service account JSON)
       - ./mcp/mcp-ms-office-documents/config:/app/config
+
     # command: 
     #   [
     #     "chmod", "777", "/app/output"

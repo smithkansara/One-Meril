@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import uuid
+import signal
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -22,7 +23,14 @@ logger = logging.getLogger(__name__)
 
 def markdown_to_pdf(markdown_content, page_size="letter"):
     """Convert Markdown to PDF document."""
-    logger.info(f"Starting markdown_to_pdf conversion with page_size={page_size}")
+    logger.info("Starting markdown_to_pdf conversion")
+    
+    # Limit content size to prevent timeout issues
+    MAX_CONTENT_SIZE = 100000  # 100KB
+    content_size = len(markdown_content)
+    if content_size > MAX_CONTENT_SIZE:
+        logger.error(f"Content exceeds maximum size")
+        return f"Error: Content too large. Maximum {MAX_CONTENT_SIZE} characters allowed."
     
     OUTPUT_DIR = "/app/output"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -114,6 +122,10 @@ def markdown_to_pdf(markdown_content, page_size="letter"):
     # Split content into lines
     lines = markdown_content.split('\n')
     i = 0
+    
+    # Safety check - limit iterations
+    max_iterations = len(lines) * 2  # Allow up to 2x the number of lines for nested processing
+    iterations = 0
 
     # Parsing counters
     headers_count = 0
@@ -125,6 +137,11 @@ def markdown_to_pdf(markdown_content, page_size="letter"):
 
     try:
         while i < len(lines):
+            iterations += 1
+            if iterations > max_iterations:
+                logger.error(f"Maximum iteration limit ({max_iterations}) exceeded during parsing")
+                return f"Error: Document parsing exceeded maximum iterations. Document may contain malformed markdown."
+            
             line = lines[i]
 
             # Handle empty lines (spacing)
@@ -244,7 +261,7 @@ def markdown_to_pdf(markdown_content, page_size="letter"):
         doc.build(story)
 
         # Build public URL
-        public_url = f"http://localhost:8000/files/{filename}"
+        public_url = f"https://chatgpt.e-meril.in/files/{filename}"
 
         logger.info(
             f"PDF document saved and available at: {public_url} "

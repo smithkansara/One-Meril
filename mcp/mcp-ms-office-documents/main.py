@@ -4,10 +4,13 @@ from typing import Annotated, List, Dict, Optional, Literal
 from xlsx_tools import markdown_to_excel
 from docx_tools import markdown_to_word
 from pptx_tools import create_presentation
+from pdf_tools import markdown_to_pdf
 from email_tools import create_eml
 from email_tools.dynamic_email_tools import register_email_template_tools_from_yaml
 from pathlib import Path
 import logging
+import asyncio
+import functools
 from config import get_config
 
 mcp = FastMCP("MCP Office Documents")
@@ -68,7 +71,7 @@ async def create_excel_document(
     logger.info("Converting markdown to Excel document")
 
     try:
-        result = markdown_to_excel(markdown_content)
+        result = await asyncio.to_thread(markdown_to_excel, markdown_content)
         logger.info("Excel document uploaded successfully")
         return result
     except Exception as e:
@@ -92,7 +95,7 @@ async def create_word_document(
     logger.info("Converting markdown to Word document")
 
     try:
-        result = markdown_to_word(markdown_content)
+        result = await asyncio.to_thread(markdown_to_word, markdown_content)
         logger.info("Word document uploaded successfully")
         return result
     except Exception as e:
@@ -118,7 +121,7 @@ async def create_powerpoint_presentation(
 
     try:
         slides_data = [slide.model_dump() for slide in slides]
-        result = create_presentation(slides_data, format)
+        result = await asyncio.to_thread(create_presentation, slides_data, format)
         logger.info(f"PowerPoint presentation created: {result}")
         return result
     except Exception as e:
@@ -146,19 +149,12 @@ async def create_pdf_document(
     logger.info(f"Converting markdown to PDF document with {page_size} page size")
 
     try:
-        result = markdown_to_pdf(markdown_content, page_size)
+        result = await asyncio.to_thread(markdown_to_pdf, markdown_content, page_size)
         logger.info("PDF document uploaded successfully")
         return result
     except Exception as e:
         logger.error(f"Error creating PDF document: {e}")
         return f"Error creating PDF document: {str(e)}"
-
-@mcp.tool(
-    name="create_powerpoint_presentation",
-    description="Creates PowerPoint presentations with professional templates using structured slide models.",
-    tags={"powerpoint", "presentation", "slides"},
-    annotations={"title": "PowerPoint Presentation Creator"}
-)
 
 @mcp.tool(
     name="create_email_draft",
@@ -182,14 +178,16 @@ async def create_email_draft(
     logger.info(f"Creating email draft with subject: {subject}")
 
     try:
-        result = create_eml(
-            to=to,
-            cc=cc,
-            bcc=bcc,
-            re=subject,
-            content=content,
-            priority=priority,
-            language=language
+        result = await asyncio.to_thread(
+            functools.partial(create_eml,
+                to=to,
+                cc=cc,
+                bcc=bcc,
+                re=subject,
+                content=content,
+                priority=priority,
+                language=language
+            )
         )
         logger.info(f"Email draft created: {result}")
         return result
