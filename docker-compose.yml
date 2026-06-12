@@ -11,6 +11,7 @@ services:
       - rag_api
       # - redis  
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/librechat:v3
+    # image: registry.librechat.ai/danny-avila/librechat-dev-api:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:

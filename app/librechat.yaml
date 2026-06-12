@@ -93,7 +93,7 @@ interface:
     use: true
     create: true
     share: true
-    public: false
+    public: true
   peoplePicker:
     users: true
     groups: true
@@ -292,66 +292,7 @@ endpoints:
       modelDisplayLabel: 'Grok'
       # Set directEndpoint to true if the baseURL is the full completions endpoint
       # directEndpoint: true 
-     
 
- #     - name: "OpenAI"               # internal name
- #     label: "My OpenAI"             # what shows up in the dropdown
- #     endpoint: "openAI"             # link to built-in OpenAI logic
- #     iconURL: "/assets/openai.svg" # place this SVG in client/public/custom/
- #     apiKey: "REDACTED-ROTATE-THIS-KEY"              # or use env var
- #     baseURL: "https://api.openai.com/v1" # optional, defaults to OpenAI
- #     models:
- #        default: ["gpt-4o-mini", "gpt-4o"]
- #        fetch: true
- #        web_search: true            # fetch model list automatically
- #     titleConvo: true
- #     titleModel: "gpt-4o-mini"
- #     summarize: true
- #     summaryModel: "gpt-4o-mini"
- #     forcePrompt: false
- #     modelDisplayLabel: "MerilAI"
-
-    #- name: "ollama"
-    #  apiKey: "ollama"
-      #  Endpoint: "ollama"
-      # use 'host.docker.internal' instead of localhost if running LibreChat in a docker container
-      #  baseURL: "http://host.docker.internal:11434/v1/chat/completions" 
-      #models:
-      #   default: [
-      #    "gemma3:1b",
-      #    "llama3:70b",
-      #     ]
-            #   iconURL: "/assets/ollama.png"
-        # fetching list of models is supported but the `name` field must start
-        # with `ollama` (case-insensitive), as it does in this example.
-        #   fetch: true 
-        # titleConvo: true
-        # titleModel: "current_model"
-        # summarize: false
-        # summaryModel: "current_model"
-        # forcePrompt: false
-        # modelDisplayLabel: "MI"
-     
-     
-          
-       
-    # Groq Example
-    # - name: 'groq'
-    #   apiKey: '${GROQ_API_KEY}'
-    #   baseURL: 'https://api.groq.com/openai/v1/'
-    #   models:
-    #     default:
-    #       [
-    #         'llama3-70b-8192',
-    #         'llama3-8b-8192',
-    #         'llama2-70b-4096',
-    #         'mixtral-8x7b-32768',
-    #         'gemma-7b-it',
-    #       ]
-    #     fetch: false
-    #   titleConvo: true
-    #   titleModel: 'mixtral-8x7b-32768'
-    #   modelDisplayLabel: 'groq'
 
     # Mistral AI Example
     - name: 'Mistral' # Unique name for the endpoint
@@ -397,6 +338,19 @@ endpoints:
       # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+    
+
+    # - name: "xai-images"
+    #   type: image
+    #   apiKey: "${XAI_API_KEY}"
+    #   baseURL: "https://api.x.ai/v1"
+    #   models:
+    #     default: ["grok-imagine-image-pro"]
+    #     fetch: false
+    #   endpoints:
+    #     images: "/images/generations"
+    #   modelDisplayLabel: "Grok Image Pro"
+    #   titleConvo: false
 
     # OpenRouter Example
     # - name: 'OpenRouter'
@@ -492,6 +446,7 @@ mcpSettings:
   allowedDomains:
     - 'host.containers.internal' # For accessing services running on the host machine from within a Docker container
     - 'host.containers.internal:8958' # For accessing services running on the host machine from within a Docker container
+    - 'ai.e-meril.in'
 
 mcpServers:
   mcp-office:
