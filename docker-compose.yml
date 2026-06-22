@@ -7,9 +7,15 @@ services:
     ports:
       - "${PORT}:${PORT}"
     depends_on:
-      - mongodb
-      - rag_api
-      # - redis  
+      mongodb:
+        condition: service_started
+      rag_api:
+        condition: service_started
+      mcp-analytics:
+        condition: service_healthy
+      quickchart:
+        condition: service_started
+      # - redis
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/librechat:v3
     # image: registry.librechat.ai/danny-avila/librechat-dev-api:latest
     restart: always
@@ -25,6 +31,7 @@ services:
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - EMAIL_HOST=${EMAIL_HOST}
+      - QUICKCHART_URL=http://quickchart:3400
         #- REDIS_HOST=redis
         #- REDIS_PORT=6379
         #- REDIS_PASSWORD=testingpassword
@@ -179,17 +186,54 @@ services:
     #   retries: 3
     networks:
       - librechat-net
+  mcp-analytics:
+    container_name: mcp-analytics
+    build:
+      context: ./mcp-analytics-server
+    restart: always
+    stop_signal: SIGINT
+    env_file:
+      - .env
+    environment:
+      - MERIL_ANALYTICS_WEBHOOK_URL=${MERIL_ANALYTICS_WEBHOOK_URL}
+      - MCP_PORT=8959
+      - CHART_BASE_URL=${CHART_BASE_URL:-http://10.10.30.160:3400}
+      - WEBSERVER_BASE_URL=${WEBSERVER_BASE_URL:-http://10.10.30.160:8000}
+      - CHART_DIR=/app/charts
+      - OLLAMA_URL=http://ollama:11434
+      - QWEN_MODEL=${QWEN_MODEL:-qwen3:8b}
+    volumes:
+      - ./mcp-analytics-server/charts:/app/charts
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 8959), 2).close()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - librechat-net
+
+  quickchart:
+    container_name: quickchart
+    image: docker.io/ianw/quickchart
+    restart: always
+    ports:
+      - "3400:3400"
+    networks:
+      - librechat-net
+
   webserver:
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/python-webserver:v1
     working_dir: /app
     volumes:
       - ./mcp/mcp-ms-office-documents/output:/app/output
+      - ./mcp-analytics-server/charts:/app/analytics-charts
       - ./webserver.py:/app/webserver.py
     command: ["python", "webserver.py"]
     ports:
-      - "8000:8000" 
+      - "8000:8000"
     networks:
-      - librechat-net         
+      - librechat-net
 
 volumes:
    meril_mongo:
