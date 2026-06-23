@@ -13,8 +13,6 @@ services:
         condition: service_started
       mcp-analytics:
         condition: service_healthy
-      quickchart:
-        condition: service_started
       # - redis
     image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/librechat:v3
     # image: registry.librechat.ai/danny-avila/librechat-dev-api:latest
@@ -31,7 +29,6 @@ services:
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - EMAIL_HOST=${EMAIL_HOST}
-      - QUICKCHART_URL=http://quickchart:3400
         #- REDIS_HOST=redis
         #- REDIS_PORT=6379
         #- REDIS_PASSWORD=testingpassword
@@ -137,18 +134,6 @@ services:
       - vectordb
     env_file:
       - .env
-        #  ollama:
-        #image: localhost/chatgpt.e-meril.in-ollama:v1
-        #deploy:
-        #resources:
-        #reservations:
-        # devices:
-        #   - driver: nvidia
-        #     capabilities: [compute, utility]
-        # ports:
-        # - "11434:11434"
-        #volumes:
-        # - ./ollama:/root/.ollama  
     networks:
       - librechat-net
   mcp-office-docs:
@@ -186,18 +171,53 @@ services:
     #   retries: 3
     networks:
       - librechat-net
+  ollama:
+    image: docker.io/ollama/ollama:0.6.8
+    container_name: ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - librechat-net
+
+  ollama-init:
+    image: docker.io/ollama/ollama:0.6.8
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["ollama"]
+    command: ["pull", "qwen3:8b"]
+    restart: "no"
+    networks:
+      - librechat-net
+
   mcp-analytics:
     container_name: mcp-analytics
     build:
       context: ./mcp-analytics-server
     restart: always
     stop_signal: SIGINT
+    depends_on:
+      ollama:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       - MERIL_ANALYTICS_WEBHOOK_URL=${MERIL_ANALYTICS_WEBHOOK_URL}
       - MCP_PORT=8959
-      - CHART_BASE_URL=${CHART_BASE_URL:-http://10.10.30.160:3400}
       - WEBSERVER_BASE_URL=${WEBSERVER_BASE_URL:-http://10.10.30.160:8000}
       - CHART_DIR=/app/charts
       - OLLAMA_URL=http://ollama:11434
@@ -210,15 +230,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    networks:
-      - librechat-net
-
-  quickchart:
-    container_name: quickchart
-    image: docker.io/ianw/quickchart
-    restart: always
-    ports:
-      - "3400:3400"
     networks:
       - librechat-net
 
@@ -240,6 +251,7 @@ volumes:
      external: true
    meril_pgvector:
      external: true
+   ollama_data:
   #pgdata2:
     #mongodata:
     #redisdata:  
