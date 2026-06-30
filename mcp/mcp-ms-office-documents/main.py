@@ -1,12 +1,13 @@
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 from typing import Annotated, List, Dict, Optional, Literal
-from xlsx_tools import markdown_to_excel
+from xlsx_tools import markdown_to_excel, create_excel_with_report
 from docx_tools import markdown_to_word
 from pptx_tools import create_presentation
 from pdf_tools import markdown_to_pdf
 from email_tools import create_eml
 from email_tools.dynamic_email_tools import register_email_template_tools_from_yaml
+from report_builder import create_report_in_same_format, SUPPORTED_FORMATS
 from pathlib import Path
 import logging
 import asyncio
@@ -194,6 +195,76 @@ async def create_email_draft(
     except Exception as e:
         logger.error(f"Error creating email draft: {e}")
         return f"Error creating email draft: {str(e)}"
+
+@mcp.tool(
+    name="create_report_with_source_data",
+    description=(
+        "ALWAYS call this tool at the end of any file analysis or web-data analysis workflow. "
+        "It combines the original source data (uploaded file content OR web-fetched data) with the full analysis report "
+        "into a single downloadable file in the SAME FORMAT as the source. "
+        "Supports: xlsx (two sheets), docx (two sections), pdf (two sections), pptx (two slide sections), csv, txt. "
+        "For uploaded files: pass the file content and the file's extension as file_format. "
+        "For web data: pass the scraped/fetched content and choose docx, pdf, or xlsx as the output format. "
+        "The user receives one file containing both their data and the analysis — ready to download locally."
+    ),
+    tags={"report", "analysis", "download", "excel", "word", "pdf", "pptx", "csv"},
+    annotations={"title": "Create Report With Source Data"}
+)
+async def create_report_with_source_data(
+    data_content: Annotated[str, Field(
+        description=(
+            "The original source data as text or markdown. "
+            "For uploaded files: pass the full extracted content of the file. "
+            "For web data: pass the full scraped/fetched text or table content. "
+            "This becomes the first section/sheet labelled by data_section_title."
+        )
+    )],
+    report_markdown: Annotated[str, Field(
+        description=(
+            "The analysis/report in markdown format (headers, bullet points, tables). "
+            "This becomes the second section/sheet labelled by report_section_title."
+        )
+    )],
+    file_format: Annotated[str, Field(
+        description=(
+            "Output file format — MUST match the original file's extension when processing an uploaded file. "
+            f"Accepted values: {', '.join(sorted(SUPPORTED_FORMATS))}. "
+            "Examples: 'xlsx' for Excel, 'docx' for Word, 'pdf' for PDF, 'pptx' for PowerPoint, "
+            "'csv' for CSV, 'txt' for plain text. "
+            "For web data with no source file, choose the most suitable format (xlsx or docx recommended)."
+        )
+    )],
+    data_section_title: Annotated[str, Field(
+        default="Source Data",
+        description="Label for the original data section or sheet. Defaults to 'Source Data'."
+    )] = "Source Data",
+    report_section_title: Annotated[str, Field(
+        default="Analysis Report",
+        description="Label for the analysis report section or sheet. Defaults to 'Analysis Report'."
+    )] = "Analysis Report",
+) -> str:
+    """Builds a combined file (data + report) in the requested format and returns a download URL."""
+
+    logger.info(
+        "Building combined report: format=%s data_len=%d report_len=%d",
+        file_format, len(data_content), len(report_markdown),
+    )
+
+    try:
+        result = await asyncio.to_thread(
+            create_report_in_same_format,
+            data_content,
+            report_markdown,
+            file_format,
+            data_section_title,
+            report_section_title,
+        )
+        logger.info("Combined report created: %s", result)
+        return result
+    except Exception as e:
+        logger.error("Error creating combined report: %s", e)
+        return f"Error creating combined report: {str(e)}"
+
 
 if __name__ == "__main__":
     mcp.run(

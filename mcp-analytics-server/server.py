@@ -243,6 +243,97 @@ async def _call_qwen(content: str, user_prompt: str) -> dict:
         ) from e
 
 
+def _detect_format(file_name: str | None) -> str:
+    """Infer the output file format from the uploaded filename extension."""
+    if not file_name:
+        return "xlsx"
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    mapping = {
+        "xlsx": "xlsx", "xls": "xlsx",
+        "docx": "docx", "doc": "docx",
+        "pdf": "pdf",
+        "pptx": "pptx", "ppt": "pptx",
+        "csv": "csv",
+        "txt": "txt", "text": "txt", "md": "txt",
+    }
+    return mapping.get(ext, "xlsx")
+
+
+async def _load_file_content(
+    file_content: str | None,
+    file_url: str | None,
+    file_name: str | None,
+) -> tuple[str, list[str]]:
+    """Fetch/collect the file text. Returns (raw_content, parts_list)."""
+    parts: list[str] = []
+    raw_content = ""
+
+    if file_content:
+        raw_content = file_content
+        parts.append(file_content)
+    elif file_url:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                r = await client.get(file_url)
+                r.raise_for_status()
+                raw_content = r.text
+                parts.append(raw_content)
+        except Exception:
+            parts.append(f"[File available at: {file_url} — could not download automatically]")
+
+    if file_name:
+        parts.insert(0, f"Filename: {file_name}")
+
+    return raw_content, parts
+
+
+async def _render_charts(charts: list) -> list[str]:
+    """Save each chart to disk and return iframe markdown blocks."""
+    blocks: list[str] = []
+    os.makedirs(CHART_DIR, exist_ok=True)
+    for chart in charts:
+        config = chart.get("config")
+        if not isinstance(config, dict):
+            continue
+        title = chart.get("title", "")
+        chart_id = uuid.uuid4().hex[:12]
+        chart_file = Path(CHART_DIR) / f"chart-{chart_id}.html"
+        await asyncio.to_thread(chart_file.write_text, _make_artifact_html(config), "utf-8")
+        chart_url = f"{WEBSERVER_BASE_URL}/charts/chart-{chart_id}.html"
+        label = f"**{title}**\n" if title else ""
+        blocks.append(
+            f"{label}"
+            f'```html\n<iframe src="{chart_url}" style="width:100%;height:380px;border:none;border-radius:8px;"></iframe>\n```'
+        )
+    return blocks
+
+
+def _build_plain_report(result: dict, insights: list) -> str:
+    """Build a chart-free version of the report for embedding in downloadable files."""
+    parts: list[str] = []
+    if result.get("summary"):
+        parts.append(f"## Data Overview\n\n{result['summary']}\n")
+    if insights:
+        parts.append("## Key Insights\n\n" + "\n".join(f"- {i}" for i in insights) + "\n")
+    if result.get("markdown_report"):
+        parts.append(result["markdown_report"])
+    return "\n".join(parts).strip()
+
+
+def _build_handoff(detected_format: str, report_plain: str) -> str:
+    return (
+        f"\n\n---\n"
+        f"**NEXT STEP — call `create_report_with_source_data` now:**\n"
+        f"- `data_content` = the original file content passed to this tool\n"
+        f"- `report_markdown` = the analysis above (without chart iframes)\n"
+        f"- `file_format` = `{detected_format}`\n"
+        f"- `data_section_title` = `Source Data`\n"
+        f"- `report_section_title` = `Analysis Report`\n"
+        f"\n*Report content for file builder (plain, no iframes):*\n"
+        f"<!-- REPORT_PLAIN_START -->\n{report_plain}\n<!-- REPORT_PLAIN_END -->"
+    )
+
+
 @mcp.tool()
 async def run_file_analytics(
     prompt: str,
@@ -252,11 +343,23 @@ async def run_file_analytics(
 ) -> str:
     """
     Analyze an uploaded file using the local Qwen AI model (qwen3:8b).
-    ALWAYS use this tool — when the user has uploaded any file:
+
+    ALWAYS use this tool when the user has uploaded ANY file:
     CSV, Excel, PDF, Word document, text file, or any other attachment.
 
     The pipeline: reads the full document → preprocesses/cleans → finds insights →
     picks the best chart types → renders interactive Chart.js visualizations.
+
+    IMPORTANT — after this tool returns, you MUST call `create_report_with_source_data`
+    from the mcp-office-docs server using:
+      - data_content  = the original file content (file_content argument or fetched text)
+      - report_markdown = the full analysis text returned by this tool (without chart iframes)
+      - file_format   = the file's extension (e.g. "xlsx", "docx", "pdf", "pptx", "csv", "txt")
+      - data_section_title  = "Source Data"
+      - report_section_title = "Analysis Report"
+    This creates a combined downloadable file and gives the user a download link.
+    The same applies when the source data comes from the web instead of an uploaded file —
+    use "xlsx" or "docx" as the format and pass the fetched content as data_content.
 
     Args:
         prompt: What the user wants to analyze or understand about the file.
@@ -264,19 +367,7 @@ async def run_file_analytics(
         file_name: Filename of the uploaded file (pass if available).
         file_content: Extracted text/table content from the file (pass if available).
     """
-    parts = []
-    if file_name:
-        parts.append(f"Filename: {file_name}")
-    if file_content:
-        parts.append(file_content)
-    elif file_url:
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-                r = await client.get(file_url)
-                r.raise_for_status()
-                parts.append(r.text)
-        except Exception:
-            parts.append(f"[File available at: {file_url} — could not download automatically]")
+    _, parts = await _load_file_content(file_content, file_url, file_name)
 
     if not parts:
         return (
@@ -284,10 +375,8 @@ async def run_file_analytics(
             "and that LibreChat is passing the file content to the analysis tool."
         )
 
-    content = "\n\n".join(parts)
-
     try:
-        result = await _call_qwen(content, prompt)
+        result = await _call_qwen("\n\n".join(parts), prompt)
     except json.JSONDecodeError as e:
         return f"⚠️ **Analysis failed:** Qwen returned invalid JSON.\n\n```\n{e}\n```"
     except httpx.ConnectError:
@@ -297,43 +386,28 @@ async def run_file_analytics(
     except Exception as e:
         return f"⚠️ **Analysis error:** {e}"
 
-    lines = []
+    lines: list[str] = []
 
     if result.get("summary"):
         lines.append(f"## 📊 Data Overview\n\n{result['summary']}\n")
-
     if result.get("preprocessing_notes"):
         lines.append(f"*Preprocessing: {result['preprocessing_notes']}*\n")
 
-    chart_blocks = []
-    os.makedirs(CHART_DIR, exist_ok=True)
-    for chart in result.get("charts", []):
-        config = chart.get("config")
-        title = chart.get("title", "")
-        if not isinstance(config, dict):
-            continue
-        chart_id = uuid.uuid4().hex[:12]
-        chart_file = Path(CHART_DIR) / f"chart-{chart_id}.html"
-        html_content = _make_artifact_html(config)
-        await asyncio.to_thread(chart_file.write_text, html_content, "utf-8")
-        chart_url = f"{WEBSERVER_BASE_URL}/charts/chart-{chart_id}.html"
-        label = f"**{title}**\n" if title else ""
-        chart_blocks.append(
-            f"{label}"
-            f'```html\n<iframe src="{chart_url}" style="width:100%;height:380px;border:none;border-radius:8px;"></iframe>\n```'
-        )
-
+    chart_blocks = await _render_charts(result.get("charts", []))
     if chart_blocks:
         lines.append("## 📈 Charts\n\n" + "\n\n".join(chart_blocks) + "\n")
 
     insights = result.get("insights", [])
     if insights:
         lines.append("## 💡 Key Insights\n\n" + "\n".join(f"- {i}" for i in insights) + "\n")
-
     if result.get("markdown_report"):
         lines.append(result["markdown_report"])
 
-    return "\n".join(lines).strip()
+    analysis_text = "\n".join(lines).strip()
+    report_plain = _build_plain_report(result, insights)
+    handoff = _build_handoff(_detect_format(file_name), report_plain)
+
+    return analysis_text + handoff
 
 
 if __name__ == "__main__":
