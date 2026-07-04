@@ -6,3 +6,5 @@ ollama/*
 uploads/*
 meili_data_v1.12/*
 1.json
+__pycache__/
+*.pyc
