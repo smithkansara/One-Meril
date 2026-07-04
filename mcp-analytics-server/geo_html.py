@@ -45,16 +45,16 @@ html,body{overflow:hidden}
 body{background:transparent;color:var(--ink);padding:4px;
   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
-  padding:16px 18px;margin-bottom:12px}
-.gtitle{font-size:21px;font-weight:700;margin:0 0 4px}
+  padding:12px 16px;margin-bottom:8px}
+.gtitle{font-size:20px;font-weight:700;margin:0 0 3px}
 .why{font-size:13.5px;color:var(--ink2)}
 .why b{color:var(--ink)}
-.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:12px;color:var(--ink2)}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:12px;color:var(--ink2)}
 .meta .k{color:var(--ink);font-weight:600}
 .chip{display:inline-block;background:var(--plane);border:1px solid var(--line);
   border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:600;color:var(--ink)}
-.stage{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
-.mapwrap{flex:1 1 380px;min-width:280px}
+.stage{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+.mapwrap{flex:1 1 380px;min-width:280px;max-width:640px}
 svg.map{width:100%;height:auto;display:block;background:transparent;border-radius:8px}
 .land{fill:var(--land);stroke:var(--landstroke);stroke-width:.4}
 .feat{cursor:pointer;stroke:var(--surface);stroke-width:.5;transition:opacity .15s}
@@ -64,16 +64,18 @@ svg.map{width:100%;height:auto;display:block;background:transparent;border-radiu
 .bub{cursor:pointer;stroke:var(--surface);stroke-width:.8;fill-opacity:.78}
 .bub.lown{stroke:var(--warn);stroke-dasharray:2 2;fill-opacity:.45}
 .bub.sel{stroke:var(--ink);stroke-width:2}
-.legend{margin-top:10px;font-size:12px;color:var(--ink2)}
-.legend .row{display:flex;align-items:center;gap:7px;margin:3px 0}
+.legend{margin-top:6px;font-size:12px;color:var(--ink2)}
+.legend .row{display:flex;align-items:center;gap:7px;margin:2px 0}
 .sw{width:13px;height:13px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.15)}
-.gradbar{height:11px;border-radius:6px;margin:5px 0 3px}
+.gradbar{height:11px;border-radius:6px;margin:4px 0 2px}
 .gradlab{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
-.lown-key{margin-top:8px;font-size:11.5px;color:var(--warn)}
-/* drill panel */
+.lown-key{margin-top:6px;font-size:11.5px;color:var(--warn)}
+/* drill panel — align-self:flex-start (NOT stretch): before a click, this panel
+   holds one line of hint text. Stretching it to match the map's full height left
+   a large empty bordered box next to the map. */
 .drill{flex:1 1 240px;min-width:230px;max-width:340px;background:var(--panel);
   border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13px;
-  align-self:stretch}
+  align-self:flex-start}
 .drill h3{font-size:15px;margin:0 0 2px;display:flex;justify-content:space-between;align-items:center}
 .drill .x{cursor:pointer;color:var(--ink2);font-weight:700;font-size:16px;line-height:1;border:none;background:none}
 .drill .sub{color:var(--ink2);font-size:11.5px;margin-bottom:10px}
@@ -121,9 +123,24 @@ var GEO = __GEO__;
 var TITLE = __TITLE__;
 
 // ---- iframe auto-resize (mcp-ui host grows to fit; no internal scrollbar) ----
+// Only postMessage when the height ACTUALLY changes, and stop the polling
+// interval once it's been stable for a few checks. Broadcasting a same-value
+// resize on a fixed interval forever (the old behavior) made the host re-apply
+// height on every tick — with several map widgets on one page firing every
+// 1.5s, that's constant no-op reflow that fights the user's manual scrolling.
+// ResizeObserver stays active permanently as the real-time watcher (e.g. for a
+// drill-down click expanding content), so stopping the interval loses nothing.
+var _lastSentH=0, _stableTicks=0, _sizeIntervalId=null;
 function sendSize(){
   try{
     var h=Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)+6;
+    if(Math.abs(h-_lastSentH)<2){
+      _stableTicks++;
+      if(_stableTicks>=4 && _sizeIntervalId){clearInterval(_sizeIntervalId);_sizeIntervalId=null;}
+      return;
+    }
+    _stableTicks=0;
+    _lastSentH=h;
     parent.postMessage({type:"ui-size-change",payload:{height:h}},"*");
   }catch(e){}
 }
@@ -133,7 +150,7 @@ window.addEventListener("load",function(){
 });
 if(window.ResizeObserver){new ResizeObserver(sendSize).observe(document.body);}
 window.addEventListener("resize",sendSize);
-setInterval(sendSize,1500);
+_sizeIntervalId=setInterval(sendSize,1500);
 
 var CATS=["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f","#edc948","#b07aa1","#ff9da7","#9c755f","#bab0ac"];
 var VB_W=960, VB_H=500;

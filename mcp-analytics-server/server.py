@@ -861,10 +861,22 @@ var stageEl=document.getElementById("stage"),pctEl=document.getElementById("pct"
     repEl=document.getElementById("report"),errEl=document.getElementById("error");
 var stop=false,misses=0;
 // Report CONTENT height (scrollHeight), not the clamped frame height, so the
-// mcp-ui host grows the iframe to fit → no internal scrollbar.
+// mcp-ui host grows the iframe to fit → no internal scrollbar. Only postMessage
+// when the height ACTUALLY changes, and stop the polling interval once stable —
+// broadcasting a same-value resize forever caused the host to re-apply height on
+// every tick, which fights the user's manual scrolling (worse with several
+// widgets on one page each polling independently).
+var _lastSentH=0, _stableTicks=0, _sizeIntervalId=null;
 function sendSize(){
   try{
     var h=Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)+4;
+    if(Math.abs(h-_lastSentH)<2){
+      _stableTicks++;
+      if(_stableTicks>=4 && _sizeIntervalId){clearInterval(_sizeIntervalId);_sizeIntervalId=null;}
+      return;
+    }
+    _stableTicks=0;
+    _lastSentH=h;
     parent.postMessage({type:"ui-size-change",payload:{height:h}},"*");
   }catch(e){}
 }
@@ -873,7 +885,7 @@ window.addEventListener("load",function(){
   sendSize();
 });
 if(window.ResizeObserver){new ResizeObserver(sendSize).observe(document.body);}
-setInterval(sendSize,1000);   // safety net for late-loading nested chart iframes
+_sizeIntervalId=setInterval(sendSize,1000);   // safety net for late-loading nested chart iframes
 async function poll(){
   if(stop)return;
   try{
