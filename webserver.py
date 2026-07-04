@@ -3,7 +3,7 @@ import os
 import json
 import uuid
 
-PORT = 8000
+PORT = 7001
 OUTPUT_DIR = "/app/output"
 CHARTS_DIR = "/app/analytics-charts"
 

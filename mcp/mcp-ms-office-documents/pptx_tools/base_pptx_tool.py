@@ -31,7 +31,7 @@ def create_presentation(slides: List[Dict[str, Any]], format: str = "4:3") -> st
         file_path = presentation.save()
         filename = os.path.basename(file_path)
 
-        public_url = f"https://chatgpt.e-meril.in/files/{filename}"
+        public_url = f"{os.getenv('PUBLIC_FILES_BASE_URL', 'http://10.10.30.160:7001/files').rstrip('/')}/{filename}"
 
         return public_url
 

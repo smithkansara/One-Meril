@@ -47,8 +47,8 @@ services:
         target: /app/client/dist/manifest.webmanifest
         read_only: true
       - ./images:/app/client/public/images
-      - ./uploads:/app/uploads
-      - ./logs:/app/api/logs
+      - ./uploads:/app/uploads:U
+      - ./logs:/app/api/logs:U
       - ./app/librechat.yaml:/app/librechat.yaml
         #- ./assets/ollama.png:/app/client/dist/assets/ollama.png
         #- ./assets/ollama.png:/app/client/public/assets/ollama.png
@@ -108,7 +108,9 @@ services:
       - MEILI_NO_ANALYTICS=true
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
     volumes:
-      - ./meili_data_v1.12:/meili_data
+      # `:U` lets rootless podman chown the data dir to the container user (UID/GID),
+      # fixing "Permission denied (os error 13)" — matches the ./uploads and ./logs mounts.
+      - ./meili_data_v1.12:/meili_data:U
     networks:
       - librechat-net
   vectordb:
@@ -137,8 +139,12 @@ services:
     networks:
       - librechat-net
   mcp-office-docs:
-    # image: localhost/custom-mcp:latest
-    image: registry-git.e-meril.in/nexgen-it/chatgpt.e-meril.in/mcp-office:v2
+    # Built locally from ./mcp/mcp-ms-office-documents so it includes the
+    # combined-report builder + POST /build-report route. (Registry image
+    # mcp-office:v2 lacks these.)
+    image: localhost/mcp-office:latest
+    build:
+      context: ./mcp/mcp-ms-office-documents
     container_name: mcp-office-docs
     restart: always
     ports:
@@ -148,16 +154,13 @@ services:
       - ./mcp/mcp-ms-office-documents/.env
     volumes:
       # Local output directory (used by LOCAL strategy)
-      - type: bind
-        source: ./mcp/mcp-ms-office-documents/output
-        target: /app/output
-        read_only: false
+      - ./mcp/mcp-ms-office-documents/output:/app/output:U
       # Custom Office templates (optional): custom_pptx_template_4_3.pptx, custom_pptx_template_16_9.pptx, custom_docx_template.docx, custom_email_template.html
-      - ./mcp/mcp-ms-office-documents/custom_templates:/app/custom_templates
+      - ./mcp/mcp-ms-office-documents/custom_templates:/app/custom_templates:U
       # Config directory containing:
       #   - email_templates.yaml (dynamic email tool definitions – Mustache templates)
       #   - credentials or other configuration files (e.g., GCS service account JSON)
-      - ./mcp/mcp-ms-office-documents/config:/app/config
+      - ./mcp/mcp-ms-office-documents/config:/app/config:U
 
     # command: 
     #   [
@@ -171,14 +174,42 @@ services:
     #   retries: 3
     networks:
       - librechat-net
+      #This is the server that will handle the analytics for the MCP tool. It will be used to generate charts and graphs for the analytics dashboard.
   ollama:
     image: docker.io/ollama/ollama:0.6.8
     container_name: ollama
     restart: always
     ports:
       - "11434:11434"
+    environment:
+      # Keep the model resident on the GPU once loaded (no per-request reload).
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_NUM_PARALLEL=1
+    # ---- NVIDIA RTX A4000 GPU passthrough (manual, no CDI) ----
+    # Podman 4.9.3 can't parse the host's NVIDIA CDI spec (uses the CDI 0.6.0
+    # `additionalGids` field, which this podman rejects), so `nvidia.com/gpu=all`
+    # is unusable. Instead we bind the compute device nodes (world-rw) and the
+    # driver user-space libraries directly.
+    # All library mounts use version-INDEPENDENT sonames (…so.1 / …so.4), which
+    # Podman resolves to the current driver at mount time — so this needs NO
+    # maintenance across NVIDIA driver upgrades. (libnvidia-gpucomp was verified
+    # unnecessary for inference and is intentionally omitted, since it is the only
+    # driver lib without a version-independent soname symlink.)
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
     volumes:
       - ollama_data:/root/.ollama
+      - /usr/lib/x86_64-linux-gnu/libcuda.so.1:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libcudadebugger.so.1:/usr/lib/x86_64-linux-gnu/libcudadebugger.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.4:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-cfg.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-cfg.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libnvidia-allocator.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-allocator.so.1:ro
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
@@ -199,13 +230,14 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     entrypoint: ["ollama"]
-    command: ["pull", "qwen3:8b"]
+    command: ["pull", "qwen3:8b-q4_k_m"]
     restart: "no"
     networks:
       - librechat-net
 
   mcp-analytics:
     container_name: mcp-analytics
+    image: localhost/mcp-analytics:latest
     build:
       context: ./mcp-analytics-server
     restart: always
@@ -218,10 +250,14 @@ services:
     environment:
       - MERIL_ANALYTICS_WEBHOOK_URL=${MERIL_ANALYTICS_WEBHOOK_URL}
       - MCP_PORT=8959
-      - WEBSERVER_BASE_URL=${WEBSERVER_BASE_URL:-http://10.10.30.160:8000}
+      - WEBSERVER_BASE_URL=${WEBSERVER_BASE_URL:-http://10.10.30.160:7001}
       - CHART_DIR=/app/charts
       - OLLAMA_URL=http://ollama:11434
-      - QWEN_MODEL=${QWEN_MODEL:-qwen3:8b}
+      - QWEN_MODEL=${QWEN_MODEL:-qwen3:8b-q4_k_m}
+      # GPU (16 GB VRAM) comfortably fits a larger context than the old CPU limit.
+      - NUM_CTX=${NUM_CTX:-16384}
+      - MAX_DATA_CHARS=${MAX_DATA_CHARS:-48000}
+      - MCP_OFFICE_URL=http://mcp-office-docs:8958
     volumes:
       - ./mcp-analytics-server/charts:/app/charts
     healthcheck:
@@ -242,7 +278,7 @@ services:
       - ./webserver.py:/app/webserver.py
     command: ["python", "webserver.py"]
     ports:
-      - "8000:8000"
+      - "7001:7001"
     networks:
       - librechat-net
 

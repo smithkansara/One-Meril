@@ -386,6 +386,35 @@ endpoints:
     #   forcePrompt: false
     #   modelDisplayLabel: 'Portkey'
     #   iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+fileConfig:
+  endpoints:
+    default:
+      fileLimit: 10
+      fileSizeLimit: 50            # MB per individual file
+      totalSizeLimit: 100          # MB total per request
+      supportedMimeTypes:
+        # images / pdf / text / json
+        - "image/.*"
+        - "application/pdf"
+        - "text/.*"
+        - "application/json"
+        # Excel — every variant
+        - "application/vnd\\.ms-excel"                                                   # .xls
+        - "application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet"      # .xlsx
+        - "application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.template"   # .xltx
+        - "application/vnd\\.ms-excel\\.sheet\\.macroEnabled\\.12"                       # .xlsm
+        - "application/vnd\\.ms-excel\\.sheet\\.binary\\.macroEnabled\\.12"              # .xlsb
+        - "application/vnd\\.oasis\\.opendocument\\.spreadsheet"                         # .ods
+        # Word / PowerPoint (OpenXML wildcard + legacy)
+        - "application/vnd\\.openxmlformats-officedocument\\..*"
+        - "application/msword"
+        - "application/vnd\\.ms-powerpoint"
+        # Fallbacks: some browsers/OSes report Office files as generic binary or zip
+        - "application/octet-stream"
+        - "application/zip"
+  serverFileSizeLimit: 200         # global cap (MB)
+  avatarSizeLimit: 2
+
 # fileConfig:
 #   endpoints:
 #     assistants:
@@ -444,14 +473,33 @@ endpoints:
       #    url: http://10.10.3.205:8958/sse
 mcpSettings:
   allowedDomains:
-    - 'host.containers.internal' # For accessing services running on the host machine from within a Docker container
-    - 'host.containers.internal:8958' # For accessing services running on the host machine from within a Docker container
+    - 'mcp-office-docs'
+    - 'mcp-office-docs:8958'
+    - 'mcp-analytics'
+    - 'mcp-analytics:8959'
+    - 'host.containers.internal'
+    - 'host.containers.internal:8958'
+    - 'host.containers.internal:8959'
     - 'ai.e-meril.in'
 
 mcpServers:
+  # Use container network aliases (all services share the librechat-net network).
+  # host.containers.internal / host.docker.internal are refused from inside the
+  # LibreChat container, so we address the MCP servers by their container names.
   mcp-office:
     type: http
-    url: http://host.containers.internal:8958/mcp  # Adjust URL if running on different host
+    url: http://mcp-office-docs:8958/mcp
     enabled: true
+    timeout: 120000
+
+  # Server KEY must be "analytics" (NOT "mcp-analytics"): the existing Agent's
+  # saved tool references are "run_file_analytics_mcp_analytics", i.e. tool
+  # "run_file_analytics" on a server named "analytics". Renaming the key here
+  # makes those references resolve to this working server at container:8959.
+  analytics:
+    type: http
+    url: http://mcp-analytics:8959/mcp
+    enabled: true
+    timeout: 300000  # 5 min — Qwen analysis can take time
 
   

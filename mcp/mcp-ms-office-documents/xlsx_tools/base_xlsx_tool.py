@@ -118,7 +118,7 @@ def markdown_to_excel(markdown_content: str) -> str:
         with open(file_path, "wb") as f:
             f.write(file_object.read())
 
-        public_url = f"https://chatgpt.e-meril.in/files/{filename}"
+        public_url = f"{os.getenv('PUBLIC_FILES_BASE_URL', 'http://10.10.30.160:7001/files').rstrip('/')}/{filename}"
 
         logger.info(
             "Excel upload completed (headers=%d, tables=%d, url=%s)",

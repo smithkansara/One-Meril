@@ -15,7 +15,12 @@ from typing import List, Tuple, Dict
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = "/app/output"
-PUBLIC_BASE = "https://chatgpt.e-meril.in/files"
+# Base URL for download links. Defaults to the webserver's direct address (the
+# same one chart iframes use and that browsers can reach). The chatgpt.e-meril.in
+# reverse proxy strips the /files/ prefix, so links via that domain 404 — use the
+# direct webserver base instead. Override with PUBLIC_FILES_BASE_URL if the proxy
+# is fixed to preserve the prefix.
+PUBLIC_BASE = os.getenv("PUBLIC_FILES_BASE_URL", "http://10.10.30.160:7001/files").rstrip("/")
 
 
 def _save(buffer_or_path, suffix: str) -> str:
@@ -42,12 +47,16 @@ def _save(buffer_or_path, suffix: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _build_xlsx(data_content: str, report_markdown: str,
-                data_sheet: str, report_sheet: str) -> str:
+                data_sheet: str, report_sheet: str,
+                charts: List[dict] | None = None,
+                charts_heading: str = "") -> str:
     from xlsx_tools.add_report_to_xlsx import create_excel_with_report
     return create_excel_with_report(
         data_content, report_markdown,
         data_sheet_name=data_sheet,
         report_sheet_name=report_sheet,
+        charts=charts,
+        charts_heading=charts_heading,
     )
 
 
@@ -314,6 +323,16 @@ def _build_pptx(data_content: str, report_markdown: str,
 # CSV  — original rows + separator + report as table rows / plain text
 # ---------------------------------------------------------------------------
 
+def _csv_field(text: str) -> str:
+    """Quote a single value as one CSV field so embedded commas don't split it
+    and a leading =/+/-/@ isn't executed as a formula when opened in a spreadsheet."""
+    if not text:
+        return ""
+    if text[:1] in ('=', '+', '-', '@'):
+        text = "'" + text  # leading apostrophe forces text mode in Excel/Sheets
+    return '"' + text.replace('"', '""') + '"'
+
+
 def _build_csv(data_content: str, report_markdown: str,
                data_title: str, report_title: str) -> str:
     lines = []
@@ -322,7 +341,7 @@ def _build_csv(data_content: str, report_markdown: str,
     lines.append("")
     lines.append("")
     lines.append(f"# {report_title}")
-    # Convert markdown tables to CSV-style; keep plain lines as-is
+    # Convert markdown tables to CSV-style; every other line becomes ONE quoted field.
     for line in report_markdown.split('\n'):
         s = line.strip()
         if s.startswith('|') and s.endswith('|'):
@@ -331,9 +350,15 @@ def _build_csv(data_content: str, report_markdown: str,
                 continue
             # strip leading/trailing pipes and join with comma
             cells = [c.strip() for c in s.strip('|').split('|')]
-            lines.append(','.join(f'"{c}"' for c in cells))
+            lines.append(','.join(_csv_field(c) for c in cells))
+        elif not s:
+            lines.append("")
         else:
-            lines.append(line)
+            # Drop markdown bullet/heading markers so cells read cleanly and
+            # don't start with a formula-trigger character.
+            clean = re.sub(r'^\s*[-*+]\s+', '', line)
+            clean = re.sub(r'^\s*#{1,6}\s+', '', clean)
+            lines.append(_csv_field(clean.strip()))
 
     content = '\n'.join(lines)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -388,6 +413,8 @@ def create_report_in_same_format(
     file_format: str,
     data_section_title: str = "Source Data",
     report_section_title: str = "Analysis Report",
+    charts: List[dict] | None = None,
+    charts_heading: str = "",
 ) -> str:
     """Combine original data + analysis report into a single file.
 
@@ -398,6 +425,10 @@ def create_report_in_same_format(
     :param file_format:        Target format: xlsx | docx | pdf | pptx | csv | txt.
     :param data_section_title: Label for the data section/sheet.
     :param report_section_title: Label for the report section/sheet.
+    :param charts:             Optional Chart.js-style chart configs to embed as
+                               native charts (currently only the xlsx format).
+    :param charts_heading:     Heading shown atop the charts sheet, naming the
+                               analysis/research the user requested.
     """
     fmt = file_format.lower().strip().lstrip('.')
     fmt = _FORMAT_ALIASES.get(fmt, fmt)
@@ -407,12 +438,12 @@ def create_report_in_same_format(
         fmt = "docx"
 
     logger.info(
-        "Building combined report: format=%s data_len=%d report_len=%d",
-        fmt, len(data_content), len(report_markdown),
+        "Building combined report: format=%s data_len=%d report_len=%d charts=%d",
+        fmt, len(data_content), len(report_markdown), len(charts or []),
     )
 
     if fmt == "xlsx":
-        return _build_xlsx(data_content, report_markdown, data_section_title, report_section_title)
+        return _build_xlsx(data_content, report_markdown, data_section_title, report_section_title, charts, charts_heading)
     elif fmt == "docx":
         return _build_docx(data_content, report_markdown, data_section_title, report_section_title)
     elif fmt == "pdf":

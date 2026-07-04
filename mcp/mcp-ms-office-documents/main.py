@@ -13,6 +13,8 @@ import logging
 import asyncio
 import functools
 from config import get_config
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 mcp = FastMCP("MCP Office Documents")
 
@@ -264,6 +266,53 @@ async def create_report_with_source_data(
     except Exception as e:
         logger.error("Error creating combined report: %s", e)
         return f"Error creating combined report: {str(e)}"
+
+
+@mcp.custom_route("/build-report", methods=["POST"])
+async def build_report_route(request: Request):
+    """Plain HTTP endpoint so other services (e.g. mcp-analytics) can combine
+    original source data + an analysis report into a single downloadable file
+    in the same format as the source, without going through the MCP protocol.
+
+    Body (JSON): data_content, report_markdown, file_format,
+                 data_section_title?, report_section_title?
+    Returns: {"url": <download_url>, "file_format": <fmt>}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    data_content = body.get("data_content", "") or ""
+    report_markdown = body.get("report_markdown", "") or ""
+    file_format = (body.get("file_format") or "xlsx").lower()
+    data_section_title = body.get("data_section_title", "Source Data")
+    report_section_title = body.get("report_section_title", "Analysis Report")
+    charts = body.get("charts") or []
+    charts_heading = body.get("charts_heading") or ""
+
+    if not data_content and not report_markdown:
+        return JSONResponse(
+            {"error": "at least one of data_content or report_markdown is required"},
+            status_code=400,
+        )
+
+    try:
+        url = await asyncio.to_thread(
+            create_report_in_same_format,
+            data_content,
+            report_markdown,
+            file_format,
+            data_section_title,
+            report_section_title,
+            charts,
+            charts_heading,
+        )
+        logger.info("[build-report] created %s file: %s", file_format, url)
+        return JSONResponse({"url": url, "file_format": file_format})
+    except Exception as e:
+        logger.exception("[build-report] failed: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":

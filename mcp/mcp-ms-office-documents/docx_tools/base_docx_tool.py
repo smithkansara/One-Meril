@@ -177,7 +177,7 @@ def markdown_to_word(markdown_content):
         doc.save(file_path)
 
         # Build public URL
-        public_url = f"https://chatgpt.e-meril.in/files/{filename}"
+        public_url = f"{os.getenv('PUBLIC_FILES_BASE_URL', 'http://10.10.30.160:7001/files').rstrip('/')}/{filename}"
 
         logger.info(f"Word document saved and available at: {public_url}")
 

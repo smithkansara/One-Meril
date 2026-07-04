@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: Meril Analytics
+  version: 1.1.0
+  description: >
+    Web/text analytics action for Meril, routed through n8n
+    (GPT-4o-mini + Yahoo Finance + Wikipedia).
+
+    ROUTING — read before calling:
+    Use `run_analytics` ONLY when there is NO file attached — stocks, crypto,
+    market data, rankings, comparisons, and general web/research queries.
+    When the user uploads ANY file (CSV, Excel, Word, PDF, PowerPoint, TXT, JSON, …),
+    do NOT use this action. File uploads are analyzed on-premises by the local
+    `run_file_analytics` tool (Ollama qwen3:8b-q4_k_m on the RTX A4000 GPU), which
+    also returns a combined downloadable report — this HTTP action does not process files.
+servers:
+  - url: https://ai.e-meril.in
+paths:
+  /webhook/meril-analytics:
+    post:
+      operationId: run_analytics
+      summary: Run WEB analytics (no file) — stocks, crypto, rankings, comparisons, research
+      description: >
+        Accepts a natural-language analytics query about web/market data and
+        returns a markdown dashboard with chart image URLs, an insights table,
+        and a data preview. Powered by GPT-4o-mini with Yahoo Finance and
+        Wikipedia as live data sources.
+        Use this ONLY when there is NO uploaded file; for uploaded files use
+        the local `run_file_analytics` tool instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - chatInput
+              properties:
+                chatInput:
+                  type: string
+                  description: >
+                    The user's analytics query. Supports stock/crypto tickers,
+                    rankings, comparisons, and any chartable web topic.
+                  example: "Tesla stock last 3 months"
+      responses:
+        '200':
+          description: Analytics dashboard with charts and insights
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    example: chatcmpl-0-1718000000000
+                  object:
+                    type: string
+                    example: chat.completion
+                  created:
+                    type: integer
+                    example: 1718000000
+                  model:
+                    type: string
+                    example: meril-analytics
+                  choices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index:
+                          type: integer
+                        message:
+                          type: object
+                          properties:
+                            role:
+                              type: string
+                              example: assistant
+                            content:
+                              type: string
+                              description: Markdown dashboard with chart image URLs, insights table, and data preview
+                        finish_reason:
+                          type: string
+                          example: stop
+                  usage:
+                    type: object
+                    properties:
+                      prompt_tokens:
+                        type: integer
+                      completion_tokens:
+                        type: integer
+                      total_tokens:
+                        type: integer
