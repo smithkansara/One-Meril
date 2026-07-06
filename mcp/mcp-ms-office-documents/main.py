@@ -315,6 +315,59 @@ async def build_report_route(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@mcp.custom_route("/build-geo-report", methods=["POST"])
+async def build_geo_report_route(request: Request):
+    """Plain HTTP endpoint (called by mcp-analytics's render_geo_analysis) that
+    builds the downloadable geo Excel: a 'Map' sheet with a picture of the
+    rendered map, a 'Live Chart' sheet with a native editable Bubble Chart
+    (positioned by real coordinates), and a 'Data' sheet with the original rows.
+
+    Body (JSON): features, raw_rows, location_field, value_field, group_field?,
+                 title?, why?, currency_note?, warnings?,
+                 map_image_base64? (PNG, no data: prefix)
+    Returns: {"url": <download_url>}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    features = body.get("features") or []
+    raw_rows = body.get("raw_rows") or []
+    location_field = body.get("location_field") or "Location"
+    value_field = body.get("value_field") or "Value"
+    group_field = body.get("group_field")
+    title = body.get("title") or "Geographic analysis"
+    why = body.get("why") or ""
+    currency_note = body.get("currency_note") or ""
+    warnings = body.get("warnings") or []
+
+    image_bytes = None
+    b64 = body.get("map_image_base64")
+    if b64:
+        try:
+            import base64
+            image_bytes = base64.b64decode(b64)
+        except Exception:
+            logger.warning("[build-geo-report] map_image_base64 did not decode; continuing without it")
+
+    if not features:
+        return JSONResponse({"error": "features is required (from build_geo_result)"}, status_code=400)
+
+    try:
+        from xlsx_tools.geo_excel_report import create_geo_excel_report
+        url = await asyncio.to_thread(
+            create_geo_excel_report,
+            features, raw_rows, location_field, value_field, group_field,
+            title, why, currency_note, warnings, image_bytes,
+        )
+        logger.info("[build-geo-report] created file: %s", url)
+        return JSONResponse({"url": url})
+    except Exception as e:
+        logger.exception("[build-geo-report] failed: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 if __name__ == "__main__":
     mcp.run(
         transport="streamable-http",

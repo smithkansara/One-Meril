@@ -58,18 +58,15 @@ body{background:transparent;color:var(--ink);padding:4px;
 svg.map{width:100%;height:auto;display:block;background:transparent;border-radius:8px}
 .land{fill:var(--land);stroke:var(--landstroke);stroke-width:.4}
 .feat{cursor:pointer;stroke:var(--surface);stroke-width:.5;transition:opacity .15s}
-.feat.lown{stroke-dasharray:2 2;stroke:var(--warn);stroke-width:.8}
 .feat.sel{stroke:var(--ink);stroke-width:1.6}
 .feat:hover{opacity:.82}
 .bub{cursor:pointer;stroke:var(--surface);stroke-width:.8;fill-opacity:.78}
-.bub.lown{stroke:var(--warn);stroke-dasharray:2 2;fill-opacity:.45}
 .bub.sel{stroke:var(--ink);stroke-width:2}
 .legend{margin-top:6px;font-size:12px;color:var(--ink2)}
 .legend .row{display:flex;align-items:center;gap:7px;margin:2px 0}
 .sw{width:13px;height:13px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.15)}
 .gradbar{height:11px;border-radius:6px;margin:4px 0 2px}
 .gradlab{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
-.lown-key{margin-top:6px;font-size:11.5px;color:var(--warn)}
 /* drill panel — align-self:flex-start (NOT stretch): before a click, this panel
    holds one line of hint text. Stretching it to match the map's full height left
    a large empty bordered box next to the map. */
@@ -101,8 +98,6 @@ table.geo th .ar{opacity:.5;font-size:10px}
 table.geo td.num{text-align:right;font-variant-numeric:tabular-nums}
 table.geo tr.clk{cursor:pointer}
 table.geo tr.clk:hover{background:var(--plane)}
-table.geo tr.lown td{color:var(--warn)}
-table.geo tr.lown td:first-child::after{content:" ⚠";font-size:11px}
 table.geo tr.sel td{background:var(--plane)}
 /* warnings */
 .warns{border-color:var(--warn)}
@@ -111,6 +106,9 @@ table.geo tr.sel td{background:var(--plane)}
 .warns ul{margin:0 0 0 18px;font-size:12.5px;color:var(--ink2)}
 .warns li{margin:4px 0}
 .note{font-size:12px;color:var(--ink2);margin-top:6px}
+.dl{display:inline-block;margin-top:10px;background:var(--ink);color:var(--surface);
+  padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px}
+.dl:hover{background:var(--accent);color:#fff}
 .loading{padding:30px;text-align:center;color:var(--ink2);font-size:13px}
 .err{color:var(--bad);font-size:13px;padding:8px 0}
 </style>
@@ -121,6 +119,18 @@ table.geo tr.sel td{background:var(--plane)}
 (function(){
 var GEO = __GEO__;
 var TITLE = __TITLE__;
+var DOWNLOAD_URL = __DOWNLOAD__;
+// Static/print mode: used ONLY for the server-side screenshot that gets
+// embedded as a picture in the downloadable Excel file. Hides the
+// click-to-inspect drill panel (meaningless in a static image) and lets the
+// map use the full width. The screenshotter sets window.__FORCE_STATIC__ via
+// Playwright's add_init_script BEFORE this script runs — that's guaranteed to
+// work regardless of URL scheme, unlike a `file://…?query` string whose
+// location.search support is inconsistent. window.__RENDER_READY__ flips true
+// once the map (or its fallback) has fully drawn, so the screenshotter knows
+// when to capture rather than guessing with a fixed delay.
+var STATIC = window.__FORCE_STATIC__ === true;
+window.__RENDER_READY__ = false;
 
 // ---- iframe auto-resize (mcp-ui host grows to fit; no internal scrollbar) ----
 // Only postMessage when the height ACTUALLY changes, and stop the polling
@@ -133,7 +143,13 @@ var TITLE = __TITLE__;
 var _lastSentH=0, _stableTicks=0, _sizeIntervalId=null;
 function sendSize(){
   try{
-    var h=Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)+6;
+    // Measure CONTENT height via body.scrollHeight — NOT documentElement.scrollHeight,
+    // which is floored to the iframe's viewport height. Once the mcp-ui host makes the
+    // iframe tall, documentElement.scrollHeight can never report smaller, so the iframe
+    // stayed oversized with a large empty gap below the map. body.scrollHeight tracks
+    // the real content and lets the frame both grow AND shrink to fit.
+    var h=(document.body?document.body.scrollHeight:0)+6;
+    if(h<=6){return;}
     if(Math.abs(h-_lastSentH)<2){
       _stableTicks++;
       if(_stableTicks>=4 && _sizeIntervalId){clearInterval(_sizeIntervalId);_sizeIntervalId=null;}
@@ -173,6 +189,7 @@ if(typeof d3==="undefined"){
     +'The interactive map libraries could not be loaded (no internet access to the CDN). '
     +'Try again on a connected network.</div>';
   sendSize();
+  window.__RENDER_READY__=true;
   return;
 }
 if(typeof topojson==="undefined"){
@@ -201,6 +218,11 @@ function header(){
   m.append("span").html('<span class="k">Value:</span> '+esc(vf||"—")
       +(gf?' &nbsp;<span class="k">Category:</span> '+esc(gf):''));
   if(GEO.currency_note){c.append("div").attr("class","note").text("💱 "+GEO.currency_note);}
+  if(DOWNLOAD_URL){
+    var fname=DOWNLOAD_URL.split("/").pop();
+    c.append("a").attr("class","dl").attr("href",DOWNLOAD_URL).attr("target","_blank")
+      .attr("rel","noopener").text("⬇ Download "+fname+" (map picture + editable live chart + data)");
+  }
 }
 function visualName(){
   return {choropleth:"Choropleth map",bubble:"Hub / point bubble map",
@@ -256,13 +278,12 @@ function legend(container,color){
     gl.append("span").text(fmt(color.lo));
     gl.append("span").text(fmt(color.hi));
   }
-  lg.append("div").attr("class","lown-key")
-    .text("⚠ dashed / faded = low sample size (n below threshold) — read with caution");
 }
 
 // ---------- drill-down panel (Step 6) ----------
 var drillSel=null;
 function drill(panel,f,clearSel){
+  if(!panel)return;  // static/print mode has no drill panel
   if(drillSel)drillSel.classed("sel",false);
   if(clearSel)drillSel=clearSel;
   panel.html("");
@@ -278,8 +299,6 @@ function drill(panel,f,clearSel){
   if(f.rep)kv("Hub city (approx.)", f.rep);
   if(GEO.group_field)kv("Field(s) used", (GEO.value_field||"value")+" by "+GEO.group_field);
   else kv("Field used", GEO.value_field||"value");
-  if(f.lowN)panel.append("div").attr("class","lowflag")
-      .text("⚠ Low sample size (n="+f.n+") — this color/size is not statistically solid.");
   var ranked=f.ranked||[];
   if(ranked.length){
     panel.append("div").attr("class","rank").text("Ranked "+(GEO.group_field||"entities")+" here");
@@ -306,11 +325,15 @@ function projectionFor(name){
 function renderMapShell(){
   var stage=root.append("div").attr("class","stage");
   var mapwrap=stage.append("div").attr("class","mapwrap");
+  if(STATIC)mapwrap.style("max-width","none").style("flex-basis","100%");
   var svg=mapwrap.append("svg").attr("class","map")
     .attr("viewBox","0 0 "+VB_W+" "+VB_H).attr("preserveAspectRatio","xMidYMid meet");
   var status=mapwrap.append("div").attr("class","loading").text("Loading map…");
-  var panel=stage.append("div").attr("class","drill");
-  panel.append("div").attr("class","hint").text("Click a location to inspect it.");
+  var panel=null;
+  if(!STATIC){
+    panel=stage.append("div").attr("class","drill");
+    panel.append("div").attr("class","hint").text("Click a location to inspect it.");
+  }
   return {mapwrap:mapwrap, svg:svg, status:status, panel:panel};
 }
 
@@ -346,20 +369,21 @@ function renderChoropleth(){
     // data features
     svg.append("g").selectAll("path.feat")
       .data(matched).enter().append("path")
-      .attr("class",function(d){var f=byKey[d.properties.name];return "feat"+(f&&f.lowN?" lown":"");})
+      .attr("class","feat")
       .attr("d",path)
       .attr("fill",function(d){return color.of(byKey[d.properties.name]);})
-      .attr("fill-opacity",function(d){return byKey[d.properties.name].lowN?0.45:1;})
       .append("title").text(function(d){var f=byKey[d.properties.name];
-        return f.label+": "+fmt(f.value)+" (n="+f.n+")"+(f.lowN?" ⚠ low n":"");});
+        return f.label+": "+fmt(f.value)+" (n="+f.n+")";});
     svg.selectAll("path.feat").on("click",function(ev,d){
       var sel=d3.select(this);drill(ui.panel,byKey[d.properties.name],sel);sel.classed("sel",true);});
     legend(ui.mapwrap,color);
     sendSize();
+    window.__RENDER_READY__=true;
   }).catch(function(e){
     ui.status.attr("class","err").text("Could not load boundary topology ("+esc(GEO.topology.url)+"). "
       +"Showing the table instead.");
     renderTableInto(root,true);sendSize();
+    window.__RENDER_READY__=true;
   });
 }
 
@@ -390,7 +414,7 @@ function renderBubble(){
     // larger bubbles first so small ones stay clickable on top
     var feats=GEO.features.slice().sort(function(a,b){return Math.abs(b.value)-Math.abs(a.value);});
     g.selectAll("circle.bub").data(feats).enter().append("circle")
-      .attr("class",function(f){return "bub"+(f.lowN?" lown":"");})
+      .attr("class","bub")
       .attr("cx",function(f){var p=proj([f.lon,f.lat]);return p?p[0]:-99;})
       .attr("cy",function(f){var p=proj([f.lon,f.lat]);return p?p[1]:-99;})
       .attr("r",function(f){return r(Math.abs(f.value)||0);})
@@ -398,14 +422,16 @@ function renderBubble(){
       .attr("display",function(f){return proj([f.lon,f.lat])?null:"none";})
       .on("click",function(ev,f){var sel=d3.select(this);drill(ui.panel,f,sel);sel.classed("sel",true);})
       .append("title").text(function(f){return f.label+(f.rep?" ("+f.rep+")":"")
-        +": "+fmt(f.value)+" (n="+f.n+")"+(f.lowN?" ⚠ low n":"");});
+        +": "+fmt(f.value)+" (n="+f.n+")";});
     legend(ui.mapwrap,color);
-    ui.mapwrap.select(".legend").append("div").attr("class","lown-key")
-      .style("color","var(--ink2)").text("Bubble size = magnitude of "+(GEO.value_field||"value")+".");
+    ui.mapwrap.select(".legend").append("div").attr("class","note")
+      .text("Bubble size = magnitude of "+(GEO.value_field||"value")+".");
     sendSize();
+    window.__RENDER_READY__=true;
   }).catch(function(e){
     ui.status.attr("class","err").text("Could not load basemap topology. Showing the table instead.");
     renderTableInto(root,true);sendSize();
+    window.__RENDER_READY__=true;
   });
 }
 
@@ -423,9 +449,13 @@ function renderTableInto(container,asFallback){
   if(GEO.group_field)cols.push({k:"winner",t:"Top "+GEO.group_field,num:false});
   var stage=c.append("div").attr("class","stage");
   var tw=stage.append("div").style("flex","1 1 380px").style("min-width","280px");
+  if(STATIC)tw.style("max-width","none").style("flex-basis","100%");
   var tbl=tw.append("table").attr("class","geo");
-  var panel=stage.append("div").attr("class","drill");
-  panel.append("div").attr("class","hint").text("Click a row to inspect it.");
+  var panel=null;
+  if(!STATIC){
+    panel=stage.append("div").attr("class","drill");
+    panel.append("div").attr("class","hint").text("Click a row to inspect it.");
+  }
   var sortK="value", sortDir=-1;
   var thead=tbl.append("thead").append("tr");
   cols.forEach(function(col){
@@ -443,7 +473,7 @@ function renderTableInto(container,asFallback){
     var tr=tbody.selectAll("tr").data(rows,function(d){return d.location;});
     tr.exit().remove();
     var e=tr.enter().append("tr").attr("class","clk");
-    e.merge(tr).attr("class",function(d){return "clk"+(d.lowN?" lown":"");})
+    e.merge(tr).attr("class","clk")
       .html("").each(function(d){
         var row=d3.select(this);
         cols.forEach(function(col){
@@ -463,6 +493,10 @@ function renderTableInto(container,asFallback){
 // ---------- boot ----------
 function boot(){
   header();
+  // choropleth/bubble load their topology asynchronously and set
+  // window.__RENDER_READY__ themselves once actually drawn; table/none are
+  // synchronous, so it's safe to mark ready right here for those.
+  var isAsync = GEO.visual==="choropleth" || GEO.visual==="bubble";
   if(GEO.visual==="choropleth")renderChoropleth();
   else if(GEO.visual==="bubble")renderBubble();
   else if(GEO.visual==="table")renderTableInto(root,false);
@@ -472,10 +506,12 @@ function boot(){
   }
   warnings();
   sendSize();
+  if(!isAsync)window.__RENDER_READY__=true;
 }
 try{
   boot();
 }catch(err){
+  window.__RENDER_READY__=true;
   try{
     root.append("div").attr("class","card err")
       .text("The geographic view hit an unexpected error while rendering: "
@@ -492,18 +528,21 @@ try{
 </html>"""
 
 
-def make_geo_html(result: dict, title: str = "Geographic analysis") -> str:
+def make_geo_html(result: dict, title: str = "Geographic analysis", download_url: str = None) -> str:
     """Render a geo decision dict (from build_geo_result) into a self-contained page.
+    Pass download_url once the Excel export is ready to show a download link in
+    the header — omit it (or call again with it) to render without one.
 
     The JSON is embedded inside a <script> tag, so `</` is escaped to `<\\/` — a
     location value containing "</script>" then cannot break out of the block. The
     sequence is valid inside a JS string literal and decodes back to the original."""
     geo_json = json.dumps(result, separators=(",", ":")).replace("</", "<\\/")
     title_json = json.dumps(title or "Geographic analysis").replace("</", "<\\/")
+    download_json = json.dumps(download_url).replace("</", "<\\/")
     # Single-pass substitution over the TEMPLATE only. A chained
     # `.replace("__GEO__", …).replace("__TITLE__", …)` would re-scan the already-
     # inserted JSON, so a data value that literally contains "__TITLE__"/"__GEO__"
     # would be clobbered and break the embedded `var GEO` literal (blank widget).
     # re.sub with a callback never re-scans the replacement text.
-    subs = {"__GEO__": geo_json, "__TITLE__": title_json}
-    return re.sub(r"__GEO__|__TITLE__", lambda m: subs[m.group(0)], _GEO_HTML)
+    subs = {"__GEO__": geo_json, "__TITLE__": title_json, "__DOWNLOAD__": download_json}
+    return re.sub(r"__GEO__|__TITLE__|__DOWNLOAD__", lambda m: subs[m.group(0)], _GEO_HTML)

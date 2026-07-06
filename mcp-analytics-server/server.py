@@ -5,6 +5,7 @@ import csv
 import json
 import time
 import uuid
+import base64
 import asyncio
 import logging
 from pathlib import Path
@@ -869,7 +870,11 @@ var stop=false,misses=0;
 var _lastSentH=0, _stableTicks=0, _sizeIntervalId=null;
 function sendSize(){
   try{
-    var h=Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)+4;
+    // Measure CONTENT height via body.scrollHeight — NOT documentElement.scrollHeight,
+    // which is floored to the iframe viewport height and prevents the frame from
+    // shrinking once the host makes it tall (large empty gap below the content).
+    var h=(document.body?document.body.scrollHeight:0)+4;
+    if(h<=4){return;}
     if(Math.abs(h-_lastSentH)<2){
       _stableTicks++;
       if(_stableTicks>=4 && _sizeIntervalId){clearInterval(_sizeIntervalId);_sizeIntervalId=null;}
@@ -1187,6 +1192,75 @@ def _geo_contract_text(result: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Downloadable Excel export for render_geo_analysis: a server-side screenshot
+# of the rendered map (headless Chromium) + a native editable Bubble Chart +
+# the source data, combined into one xlsx by mcp-office. Best-effort only —
+# any failure here is logged and skipped; the interactive widget always
+# returns successfully regardless of whether the download link could be built.
+# ---------------------------------------------------------------------------
+
+def _screenshot_geo_widget(file_path) -> bytes | None:
+    """Launch headless Chromium, load the widget in static mode (no drill
+    panel, full-width map), wait for it to finish drawing, and return a PNG of
+    the rendered content. SYNCHRONOUS — call via asyncio.to_thread. Returns
+    None on any failure (Playwright/Chromium missing, CDN unreachable,
+    timeout, ...) — the download link is a nice-to-have, never a reason to
+    fail the whole tool call."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        logger.info("playwright not installed; skipping geo map screenshot")
+        return None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(args=["--no-sandbox", "--disable-setuid-sandbox"])
+            try:
+                page = browser.new_page(viewport={"width": 900, "height": 1200})
+                # Set BEFORE the widget's own script runs — reliable regardless of
+                # URL scheme, unlike a fragile file://…?query string.
+                page.add_init_script("window.__FORCE_STATIC__ = true;")
+                page.goto(f"file://{file_path}", wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_function("window.__RENDER_READY__ === true", timeout=15000)
+                page.wait_for_timeout(200)  # let the last paint settle
+                root = page.query_selector("#root")
+                return root.screenshot() if root else page.screenshot()
+            finally:
+                browser.close()
+    except Exception:
+        logger.exception("geo widget screenshot failed; download link will be skipped")
+        return None
+
+
+async def _build_geo_excel(result: dict, raw_rows: list, location_field: str,
+                           value_field: str, group_field: str | None,
+                           title: str, image_bytes: bytes | None) -> str | None:
+    """POST to mcp-office's /build-geo-report to combine the map picture, a
+    native editable Bubble Chart, and the source data into one xlsx. Returns
+    the download URL, or None on any failure (logged, never raised)."""
+    payload = {
+        "features": result.get("features", []),
+        "raw_rows": raw_rows,
+        "location_field": location_field,
+        "value_field": value_field,
+        "group_field": group_field,
+        "title": title,
+        "why": result.get("why", ""),
+        "currency_note": result.get("currency_note", ""),
+        "warnings": result.get("warnings", []),
+    }
+    if image_bytes:
+        payload["map_image_base64"] = base64.b64encode(image_bytes).decode("ascii")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+            r = await client.post(f"{MCP_OFFICE_URL}/build-geo-report", json=payload)
+            r.raise_for_status()
+            return r.json().get("url")
+    except Exception as e:
+        logger.warning("geo excel export failed: %s: %s", type(e).__name__, e)
+        return None
+
+
 @mcp.tool()
 async def render_geo_analysis(
     location_field: str,
@@ -1226,8 +1300,15 @@ async def render_geo_analysis(
       7. Normalizes MIXED CURRENCIES to one currency before coloring (states the rate).
 
     Returns a single interactive UI widget (map/bubbles/table + a "why this visual"
-    panel + a warning list for anything that couldn't be matched). After it returns,
-    reply with ONLY the UI resource marker (\\ui{id}) and nothing else.
+    panel + a warning list for anything that couldn't be matched), and — best
+    effort, may take a few extra seconds — a "Download" link in the widget for an
+    Excel file containing: a picture of the rendered map, a native EDITABLE Excel
+    Bubble Chart (positioned by real coordinates; edit a value/coordinate cell and
+    it updates live in Excel), and the full source data on its own sheet. If the
+    download link doesn't appear, the interactive widget above is still complete —
+    the export is a bonus, never a reason the tool call would fail.
+
+    After it returns, reply with ONLY the UI resource marker (\\ui{id}) and nothing else.
 
     Args:
         location_field: Column name holding the location (country/state/city/zone/lat,lon).
@@ -1290,9 +1371,24 @@ async def render_geo_analysis(
         os.makedirs(CHART_DIR, exist_ok=True)
         await asyncio.to_thread(_cleanup_widget_files)
         geo_id = uuid.uuid4().hex[:12]
-        await asyncio.to_thread(
-            (Path(CHART_DIR) / f"geo-{geo_id}.html").write_text, html, "utf-8",
-        )
+        file_path = Path(CHART_DIR) / f"geo-{geo_id}.html"
+        await asyncio.to_thread(file_path.write_text, html, "utf-8")
+
+        # Best-effort: screenshot the map + build a downloadable Excel (map
+        # picture + a native, genuinely editable Bubble Chart + the source
+        # data). Never blocks the core feature — any failure here just means
+        # no download link is added, not a broken widget.
+        try:
+            png_bytes = await asyncio.to_thread(_screenshot_geo_widget, file_path)
+            download_url = await _build_geo_excel(
+                result, rows, location_field, value_field, group_field, heading, png_bytes,
+            )
+            if download_url:
+                html = make_geo_html(result, heading, download_url=download_url)
+                await asyncio.to_thread(file_path.write_text, html, "utf-8")
+        except Exception:
+            logger.exception("geo excel export pipeline failed; continuing without a download link")
+
         geo_url = f"{WEBSERVER_BASE_URL}/charts/geo-{geo_id}.html"
         return EmbeddedResource(
             type="resource",

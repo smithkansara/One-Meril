@@ -194,21 +194,25 @@ check("granularity notes coordinate detection",
       "coordinate" in (r["granularity"].get("notes", "").lower()))
 
 # ---------------------------------------------------------------------------
-print("\n== 6. n=1 OUTLIERS → flagged/de-emphasized, not shown as confident ==")
-# most locations well-sampled (n=5), two are single-row outliers (n=1).
+print("\n== 6. n=1 OUTLIERS → decision data still flags them (API), UI no longer shows it (by request) ==")
+# most locations well-sampled (n=5), two are single-row outliers (n=1). The
+# underlying decision (geo_analysis.py) still computes lowN — useful for any
+# programmatic consumer of build_geo_result — but the rendered widget
+# (geo_html.py) intentionally no longer surfaces a "low sample size" warning
+# or dashed/faded styling: removed at the user's request as noisy/confusing.
 mix = rows_multi([("India", 1000), ("Germany", 900), ("Japan", 800)], per=5)
 mix += [{"loc": "Brazil", "val": 5000}]      # n=1 outlier, huge value
 mix += [{"loc": "France", "val": 4000}]      # n=1 outlier
 r = build_geo_result(mix, "loc", "val", low_n=3)
 lown = {f["label"]: f["lowN"] for f in r["features"]}
-check("Brazil (n=1) flagged lowN", lown.get("Brazil") is True)
-check("France (n=1) flagged lowN", lown.get("France") is True)
-check("India (n=5) NOT flagged lowN", lown.get("India") is False)
+check("Brazil (n=1) flagged lowN in decision data", lown.get("Brazil") is True)
+check("France (n=1) flagged lowN in decision data", lown.get("France") is True)
+check("India (n=5) NOT flagged lowN in decision data", lown.get("India") is False)
 check("low_n_locations lists exactly the outliers",
       set(r["low_n_locations"]) == {"Brazil", "France"}, r["low_n_locations"])
 html = render_ok(r, "n1-outliers")
-check("[n1-outliers] HTML de-emphasizes low-n (lown class + caution)",
-      "lown" in html and "low sample size" in html.lower())
+check("[n1-outliers] HTML no longer shows the low-n warning/styling (removed by request)",
+      "lown" not in html and "low sample size" not in html.lower())
 
 # ---------------------------------------------------------------------------
 print("\n== 7. MIXED CURRENCY → normalized before coloring, rate stated ==")
@@ -401,6 +405,53 @@ check("real bar chart survives", "Real bar chart" in kept_titles)
 check("odd-cased polarArea survives and is casing-normalized",
       any(c["title"] == "Odd-cased polarArea" and c["config"]["type"] == "polarArea" for c in kept))
 check("exactly the two valid charts remain", kept_titles == ["Real bar chart", "Odd-cased polarArea"], kept_titles)
+
+# ---------------------------------------------------------------------------
+print("\n== 14. CENTROID RESOLUTION (feeds the Excel export's live Bubble Chart) ==")
+country_r = build_geo_result(rows_multi([("India", 1200), ("United States", 3400)], per=4), "loc", "val")
+by_label = {f["label"]: f["centroid"] for f in country_r["features"]}
+check("country centroid resolved (India)", by_label.get("India") == {"lat": 22.0, "lon": 79.0})
+check("country centroid resolved (US)",
+      by_label.get("United States") == {"lat": 39.8, "lon": -98.6})
+
+state_r = build_geo_result(rows_multi([("California", 500), ("Texas", 420)], per=4), "loc", "val")
+by_label = {f["label"]: f["centroid"] for f in state_r["features"]}
+check("US state centroid resolved (California)",
+      by_label.get("California") == {"lat": 37.2, "lon": -119.7})
+
+zone_r = build_geo_result(rows_multi([("APAC", 900)], per=3), "loc", "val")
+check("zone centroid reuses its hub city's lat/lon",
+      zone_r["features"][0]["centroid"] == {"lat": 1.35, "lon": 103.82})
+
+junk_r = build_geo_result(rows_multi([("Widget-A", 10), ("SKU-1099", 30)], per=3), "loc", "val")
+check("unresolvable table rows get centroid=None (never invented)",
+      all(f["centroid"] is None for f in junk_r["features"]))
+
+# ---------------------------------------------------------------------------
+print("\n== 15. EXCEL EXPORT — download link rendering + graceful degradation ==")
+r = build_geo_result(rows_multi([("India", 1200), ("Germany", 900)], per=4), "loc", "val")
+html_no_dl = make_geo_html(r, "No download yet")
+check("no download link in the widget when download_url is omitted",
+      "class=\"dl\"" not in html_no_dl and ">null<" not in html_no_dl)
+html_with_dl = make_geo_html(r, "Ready to download",
+                             download_url="http://10.10.30.160:7001/files/geo_report_abc123.xlsx")
+check("download link appears once a URL is supplied",
+      "geo_report_abc123.xlsx" in html_with_dl)
+check("download link JSON stays valid (no injection via the URL)",
+      embedded_geo_parses(html_with_dl))
+
+# render_geo_analysis must still return the interactive widget successfully
+# even though playwright/network aren't available in this test environment —
+# the Excel export is best-effort and must never block the core feature.
+res = run(server.render_geo_analysis(
+    location_field="loc", value_field="val",
+    data=[{"loc": "India", "val": 1200}, {"loc": "Germany", "val": 900}],
+    title="Degradation check"))
+check("tool still returns a widget when the screenshot/office pipeline is unavailable",
+      hasattr(res, "resource"))
+degraded_html = widget_html(res)
+check("widget has no download link when the export pipeline couldn't run",
+      "class=\"dl\"" not in degraded_html)
 
 # ---------------------------------------------------------------------------
 print(f"\n{'='*56}\nRESULT: {PASS} passed, {FAIL} failed\n{'='*56}")

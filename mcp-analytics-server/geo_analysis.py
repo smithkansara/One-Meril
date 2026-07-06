@@ -89,6 +89,51 @@ US_STATES = {
 # Names that are BOTH a US state and a country (ambiguous without a country column)
 AMBIGUOUS_STATE_COUNTRY = {"georgia"}
 
+# Approximate geographic centroid (lat, lon) for every canonical country name
+# COUNTRY_CANON/COUNTRY_ISO can resolve to. Used ONLY for positioning bubbles in
+# the downloadable Excel's native chart — the chat choropleth draws by boundary
+# shape and never needs these. Not population-weighted, just "somewhere sensible
+# inside the country" — precise enough for a whole-country bubble marker.
+COUNTRY_CENTROIDS = {
+    "United States of America": (39.8, -98.6), "United Kingdom": (54.0, -2.0),
+    "India": (22.0, 79.0), "China": (35.0, 103.0), "Japan": (36.5, 138.0),
+    "Germany": (51.0, 9.0), "France": (46.6, 2.2), "Italy": (42.8, 12.5),
+    "Spain": (40.0, -4.0), "Canada": (56.0, -106.0), "Australia": (-25.0, 133.0),
+    "Brazil": (-10.0, -55.0), "Mexico": (23.6, -102.5), "Russia": (61.5, 105.0),
+    "South Africa": (-29.0, 24.0), "Singapore": (1.35, 103.82),
+    "Saudi Arabia": (24.0, 45.0), "United Arab Emirates": (24.0, 54.0),
+    "Argentina": (-38.4, -63.6), "Netherlands": (52.2, 5.3), "Switzerland": (46.8, 8.2),
+    "Sweden": (62.0, 15.0), "Norway": (61.0, 8.5), "Poland": (52.0, 19.0),
+    "Indonesia": (-2.5, 118.0), "South Korea": (36.5, 127.8), "New Zealand": (-41.0, 174.0),
+    "Ireland": (53.4, -8.0), "Portugal": (39.5, -8.0), "Belgium": (50.8, 4.5),
+    "Austria": (47.5, 14.5), "Egypt": (26.0, 30.0), "Nigeria": (9.1, 8.7),
+    "Kenya": (0.0, 38.0), "Turkey": (39.0, 35.0), "Thailand": (15.9, 101.0),
+    "Vietnam": (16.0, 108.0), "Malaysia": (4.2, 102.0), "Philippines": (13.0, 122.0),
+    "Chile": (-30.0, -71.0), "Colombia": (4.6, -74.3), "Peru": (-9.2, -75.0),
+}
+
+# Approximate geographic centroid (lat, lon) for every US state US_STATES can
+# resolve to — same "Excel bubble chart only" purpose as COUNTRY_CENTROIDS.
+US_STATE_CENTROIDS = {
+    "Alabama": (32.8, -86.8), "Alaska": (64.2, -149.4), "Arizona": (34.2, -111.9),
+    "Arkansas": (34.9, -92.4), "California": (37.2, -119.7), "Colorado": (39.0, -105.5),
+    "Connecticut": (41.6, -72.7), "Delaware": (39.0, -75.5), "Florida": (27.8, -81.7),
+    "Georgia": (32.6, -83.4), "Hawaii": (20.3, -156.3), "Idaho": (44.4, -114.6),
+    "Illinois": (40.0, -89.2), "Indiana": (39.9, -86.3), "Iowa": (42.0, -93.5),
+    "Kansas": (38.5, -98.4), "Kentucky": (37.5, -85.3), "Louisiana": (31.0, -92.0),
+    "Maine": (45.4, -69.2), "Maryland": (39.0, -76.7), "Massachusetts": (42.3, -71.8),
+    "Michigan": (44.3, -85.4), "Minnesota": (46.3, -94.3), "Mississippi": (32.7, -89.7),
+    "Missouri": (38.5, -92.5), "Montana": (47.0, -109.6), "Nebraska": (41.5, -99.8),
+    "Nevada": (39.3, -117.0), "New Hampshire": (43.7, -71.6), "New Jersey": (40.1, -74.7),
+    "New Mexico": (34.5, -106.1), "New York": (42.9, -75.5), "North Carolina": (35.5, -79.4),
+    "North Dakota": (47.5, -100.5), "Ohio": (40.3, -82.8), "Oklahoma": (35.5, -97.5),
+    "Oregon": (43.9, -120.6), "Pennsylvania": (40.9, -77.7), "Rhode Island": (41.7, -71.5),
+    "South Carolina": (33.9, -80.9), "South Dakota": (44.4, -100.2), "Tennessee": (35.9, -86.4),
+    "Texas": (31.5, -99.3), "Utah": (39.3, -111.7), "Vermont": (44.0, -72.7),
+    "Virginia": (37.5, -78.9), "Washington": (47.4, -120.4), "West Virginia": (38.6, -80.6),
+    "Wisconsin": (44.6, -89.9), "Wyoming": (43.0, -107.5), "District of Columbia": (38.9, -77.0),
+}
+
 # Compact world-city gazetteer: name → (lat, lon). For point plotting + zone hubs.
 CITY_GAZETTEER = {
     "new york": (40.71, -74.01), "los angeles": (34.05, -118.24), "chicago": (41.88, -87.63),
@@ -304,6 +349,52 @@ def _aggregate(rows, location_field, value_field, group_field):
 
 
 def build_geo_result(rows, location_field, value_field, group_field=None,
+                     currency_field=None, country_field=None, color_mode="auto",
+                     low_n=3, target_currency="USD"):
+    """Run steps 1–7 and return a decision + render config + honest warnings.
+
+    Also attaches a best-effort `centroid` {lat, lon} to every feature —
+    regardless of which visual the chat display ended up using — so a
+    downstream consumer (the Excel export's native bubble chart) can plot
+    ALL rows by real coordinates even when the chat rendered a choropleth
+    (which draws by boundary shape, not by point) or a table (no coordinates
+    needed for a table). Never invents a coordinate: features that don't
+    resolve to any known country/state/city/zone get centroid=None, exactly
+    like the chat renderer drops/tables them instead of guessing."""
+    result = _build_geo_result_core(
+        rows, location_field, value_field, group_field=group_field,
+        currency_field=currency_field, country_field=country_field,
+        color_mode=color_mode, low_n=low_n, target_currency=target_currency,
+    )
+    label_key = "location" if result.get("visual") == "table" else "label"
+    for f in result.get("features", []):
+        loc = f.get(label_key)
+        if "lat" in f and "lon" in f:
+            f["centroid"] = {"lat": f["lat"], "lon": f["lon"]}
+        else:
+            c = _best_effort_centroid(loc) if loc else None
+            f["centroid"] = {"lat": c[0], "lon": c[1]} if c else None
+    return result
+
+
+def _best_effort_centroid(loc):
+    """Resolve a location string to a (lat, lon) centroid for the Excel bubble
+    chart, trying country → US state → city/zone/lat-lon (via _resolve_point).
+    Returns None rather than inventing a coordinate for anything unresolved."""
+    nv = _norm(loc)
+    canon = COUNTRY_CANON.get(nv) or COUNTRY_ISO.get(nv)
+    if canon and canon in COUNTRY_CENTROIDS:
+        return COUNTRY_CENTROIDS[canon]
+    state = US_STATES.get(nv)
+    if state and state in US_STATE_CENTROIDS:
+        return US_STATE_CENTROIDS[state]
+    pt = _resolve_point(loc)
+    if pt:
+        return (pt[0], pt[1])
+    return None
+
+
+def _build_geo_result_core(rows, location_field, value_field, group_field=None,
                      currency_field=None, country_field=None, color_mode="auto",
                      low_n=3, target_currency="USD"):
     """Run steps 1–7 and return a decision + render config + honest warnings."""
